@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-gpui",
+    "baseUrl": ".",
+    "paths": {
+      "solid-gpui": ["./src/index.ts"],
+      "solid-gpui/jsx-runtime": ["./src/jsx-runtime.ts"]
+    }
+  },
+  "include": ["src", "test", "tsdown.config.ts", "vitest.config.ts"]
+}

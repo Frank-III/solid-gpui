@@ -1,0 +1,27 @@
+[package]
+name = "solid-gpui-host"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "gpui host process driven by the solid-gpui JavaScript renderer"
+publish = false
+
+[[bin]]
+name = "solid-gpui-host"
+path = "src/main.rs"
+
+# gpui is published to crates.io as `gpui`, but `gpui_platform` — which owns the
+# application entry point — is not, so both come from the Zed repository to keep
+# their versions in step. The revision is pinned rather than tracking `main`:
+# gpui's API moves quickly, and an unpinned branch would let a routine
+# `cargo update` land breaking changes without a diff to point at.
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "d9ad6aff67e47de43abb270d22de75dd950f1b48" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "d9ad6aff67e47de43abb270d22de75dd950f1b48" }
+async-channel = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

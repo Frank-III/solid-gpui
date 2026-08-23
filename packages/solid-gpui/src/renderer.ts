@@ -1,0 +1,140 @@
+/**
+ * The Solid universal renderer.
+ *
+ * `createRenderer` is called once at module scope because the JSX transform
+ * imports the returned functions by name from this package. Every callback here
+ * mutates the local shadow tree first and then records the equivalent operation
+ * on the session, which is what eventually reaches the host.
+ */
+
+import { createRenderer } from "@solidjs/universal";
+import { ELEMENT, TEXT, createNode, isText, linkNode, unlinkNode, type GpuiNode } from "./node.js";
+import { session } from "./session.js";
+import { Op } from "./protocol.js";
+import { eventNameFromProp } from "./events.js";
+import { normalizeStyle, type GpuiStyle } from "./style.js";
+
+const STYLE_PROPS = new Set(["style", "hoverStyle", "activeStyle", "groupHoverStyle"]);
+
+function wireValue(node: GpuiNode, name: string, value: unknown): unknown {
+  const eventName = eventNameFromProp(name);
+  if (eventName) {
+    if (typeof value === "function") {
+      node.handlers.set(eventName, value as (event: never) => void);
+      return true;
+    }
+    node.handlers.delete(eventName);
+    return null;
+  }
+  if (STYLE_PROPS.has(name)) return normalizeStyle(value as GpuiStyle | null | undefined);
+  return value === undefined ? null : value;
+}
+
+/** Protocol property name for a prop: listeners lose their `on` prefix. */
+function wireName(name: string): string {
+  const eventName = eventNameFromProp(name);
+  return eventName ? `@${eventName}` : name;
+}
+
+function setProperty(node: GpuiNode, name: string, value: unknown): void {
+  if (name === "children" || name === "ref") return;
+  const key = wireName(name);
+  const next = wireValue(node, name, value);
+  const previous = node.props.get(key);
+  // Listeners collapse to a boolean on the wire, so identical presence never
+  // costs a message even when the closure identity changed.
+  if (previous === next && (next === null || typeof next !== "object")) return;
+  if (next === null) node.props.delete(key);
+  else node.props.set(key, next);
+  session.push([Op.SetProp, node.id, key, next]);
+}
+
+export const {
+  render: renderTree,
+  effect,
+  memo,
+  createComponent,
+  createElement,
+  createTextNode,
+  insertNode,
+  insert,
+  spread,
+  setProp,
+  mergeProps,
+  applyRef,
+  ref,
+} = createRenderer<GpuiNode>({
+  createElement(tag, staticProps) {
+    const node = createNode(ELEMENT, tag, "");
+    session.register(node);
+    const props: Record<string, unknown> = {};
+    if (staticProps) {
+      for (const name in staticProps) {
+        if (name === "children" || name === "ref") continue;
+        const key = wireName(name);
+        const value = wireValue(node, name, staticProps[name]);
+        if (value === null) continue;
+        props[key] = value;
+        node.props.set(key, value);
+      }
+    }
+    session.push([Op.CreateElement, node.id, tag, props]);
+    return node;
+  },
+
+  createTextNode(value) {
+    const text = String(value ?? "");
+    const node = createNode(TEXT, "", text);
+    session.register(node);
+    session.push([Op.CreateText, node.id, text]);
+    return node;
+  },
+
+  replaceText(node, value) {
+    const text = String(value ?? "");
+    if (node.text === text) return;
+    node.text = text;
+    session.push([Op.SetText, node.id, text]);
+  },
+
+  isTextNode: isText,
+
+  setProperty(node, name, value) {
+    setProperty(node, name, value);
+  },
+
+  insertNode(parent, node, anchor) {
+    linkNode(parent, node, anchor);
+    session.markAttached(node);
+    session.push([Op.Insert, parent.id, node.id, anchor ? anchor.id : 0]);
+  },
+
+  removeNode(parent, node) {
+    unlinkNode(parent, node);
+    session.markDetached(node);
+    session.push([Op.Remove, parent.id, node.id]);
+  },
+
+  getParentNode(node) {
+    return node.parent ?? undefined;
+  },
+
+  getFirstChild(node) {
+    return node.children[0];
+  },
+
+  getNextSibling(node) {
+    const parent = node.parent;
+    if (!parent) return undefined;
+    return parent.children[parent.children.indexOf(node) + 1];
+  },
+});
+
+/** Creates the node that backs the window's root element. */
+export function createRootNode(): GpuiNode {
+  const node = createNode(ELEMENT, "div", "");
+  session.register(node);
+  session.push([Op.CreateElement, node.id, "div", {}]);
+  session.push([Op.SetRoot, node.id]);
+  return node;
+}

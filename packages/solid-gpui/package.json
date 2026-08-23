@@ -1,0 +1,68 @@
+{
+  "name": "solid-gpui",
+  "version": "0.1.0",
+  "description": "SolidJS universal renderer for Zed's gpui",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./jsx-runtime": {
+      "types": "./dist/jsx-runtime.d.ts",
+      "default": "./dist/jsx-runtime.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "default": "./dist/vite.js"
+    },
+    "./compiler": {
+      "types": "./dist/compiler.d.ts",
+      "default": "./dist/compiler.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "solid-js": "^2.0.0-rc.1",
+    "vite": "^7 || ^8"
+  },
+  "dependencies": {
+    "@solidjs/universal": "^2.0.0-rc.1",
+    "@dom-expressions/compiler": "^0.50.0-next.43"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "solid-js": "2.0.0-rc.1",
+    "tsdown": "^0.22.14",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  },
+  "keywords": [
+    "solid-js",
+    "solidjs",
+    "gpui",
+    "zed",
+    "renderer",
+    "desktop",
+    "ui"
+  ],
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  }
+}

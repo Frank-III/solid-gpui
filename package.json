@@ -1,0 +1,17 @@
+{
+  "name": "solid-gpui-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "build": "pnpm --filter solid-gpui build",
+    "build:host": "cargo build --release --manifest-path crates/solid-gpui-host/Cargo.toml",
+    "test": "pnpm --filter solid-gpui test",
+    "typecheck": "pnpm -r typecheck",
+    "example:counter": "pnpm --filter @solid-gpui/example-counter start",
+    "example:trace": "pnpm --filter @solid-gpui/example-counter trace"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
