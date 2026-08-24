@@ -10,6 +10,7 @@ mod canvas;
 mod input;
 mod protocol;
 mod render;
+mod scrollbar;
 mod style;
 mod tree;
 

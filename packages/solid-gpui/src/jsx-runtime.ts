@@ -25,6 +25,7 @@ import type {
   MousePressureEvent,
   PinchEvent,
   RangeEvent,
+  ResizeEvent,
   ScrollEvent,
   ScrollWheelEvent,
 } from "./events.js";
@@ -82,6 +83,14 @@ export interface ElementProps {
   onDrop?: (event: DropEvent) => void;
   onFocus?: () => void;
   onBlur?: () => void;
+  /**
+   * The element's size, once the host has laid it out, and whenever it changes.
+   *
+   * gpui has no hook for this, so the size is taken by an empty layer laid over
+   * the element. That works for anything that can hold children, which is
+   * everything except `<img>` and `<svg>`.
+   */
+  onResize?: (size: ResizeEvent) => void;
 
   /**
    * Key events reach a focusable element only while it holds focus. On an
@@ -172,8 +181,38 @@ export interface InputProps extends Omit<ElementProps, "children"> {
  */
 export interface CanvasProps extends Omit<ElementProps, "children"> {
   draw?: Draw;
-  /** Fires when the element's size changes, after it has been laid out. */
-  onResize?: (size: { width: number; height: number }) => void;
+}
+
+/**
+ * A scrollbar around whatever it scrolls.
+ *
+ * It wraps its child rather than pointing at it. The bar has to be a sibling of
+ * the scrolling content — inside it, it would scroll away with the content — and
+ * wrapping is the arrangement where that is true without naming anything.
+ * Otherwise it is transparent: it stands where a wrapping `<div>` would have,
+ * and takes the style that div would have taken.
+ *
+ * ```tsx
+ * <scrollbar style={{ flexGrow: 1, minHeight: 0 }}>
+ *   <uniform-list count={total} start={first()} onRange={setRange}>
+ *     …
+ *   </uniform-list>
+ * </scrollbar>
+ * ```
+ *
+ * It works with anything that scrolls: a `<div>` with `overflow: "scroll"`, a
+ * `<uniform-list>`, or a `<list>`.
+ */
+export interface ScrollbarProps extends ElementProps {
+  /** Defaults to vertical. */
+  orientation?: "vertical" | "horizontal";
+  /** How wide the bar is, in pixels. Defaults to 8. */
+  thickness?: number;
+  /**
+   * The thumb. `background` and `borderRadius` paint it; `minHeight` (or
+   * `minWidth`, when horizontal) keeps it grabbable in a very long list.
+   */
+  thumbStyle?: GpuiStyle;
 }
 
 export interface ImageCacheProps {
@@ -308,5 +347,7 @@ export namespace JSX {
     "image-cache": ImageCacheProps;
     /** A surface the application paints itself, from a recorded draw list. */
     canvas: CanvasProps;
+    /** A scrollbar driving another element's scroll position. */
+    scrollbar: ScrollbarProps;
   }
 }

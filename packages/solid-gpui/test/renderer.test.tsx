@@ -310,6 +310,49 @@ describe("newer elements", () => {
     });
   });
 
+  it("reports an element's size back to a listener", async () => {
+    const sizes: { width: number; height: number }[] = [];
+    const host = await mount(() => <div onResize={(size) => sizes.push(size)} />);
+    const element = created(host, "div")?.[1] as number;
+    expect(created(host, "div")?.[3]).toMatchObject({ "@resize": true });
+    host.emit({ t: "e", id: element, n: "resize", d: { width: 300, height: 120 } });
+    expect(sizes).toEqual([{ width: 300, height: 120 }]);
+  });
+
+  it("wraps what a scrollbar scrolls", async () => {
+    const host = await mount(() => (
+      <scrollbar
+        orientation="horizontal"
+        thickness={10}
+        thumbStyle={{ background: "#ffffff", borderRadius: 4, minWidth: 24 }}
+      >
+        <div style={{ overflow: "scroll" }} />
+      </scrollbar>
+    ));
+    expect(created(host, "scrollbar")?.[3]).toMatchObject({
+      orientation: "horizontal",
+      thickness: 10,
+      thumbStyle: {
+        background: { h: 0, s: 0, l: 1, a: 1 },
+        corner_radii: {
+          top_left: { k: "px", v: 4 },
+          top_right: { k: "px", v: 4 },
+          bottom_left: { k: "px", v: 4 },
+          bottom_right: { k: "px", v: 4 },
+        },
+        min_size: { width: { k: "px", v: 24 } },
+      },
+    });
+    // The bar finds what it scrolls by being wrapped around it, so nothing
+    // needs to name anything.
+    expect(host.tree.print()).toContain("<scrollbar");
+    const scrollbar = created(host, "scrollbar")?.[1] as number;
+    const inserted = host.operations.find(
+      (operation) => operation[0] === Op.Insert && operation[1] === scrollbar,
+    );
+    expect(inserted).toBeDefined();
+  });
+
   it("sends a multi-line field's own props", async () => {
     const host = await mount(() => <input multiline rows={4} value={"a\nb"} />);
     expect(created(host, "input")?.[3]).toMatchObject({

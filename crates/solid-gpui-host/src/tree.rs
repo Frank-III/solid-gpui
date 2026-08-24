@@ -47,6 +47,8 @@ pub struct Node {
     pub group_hover_style: Option<WireStyle>,
     pub group_active_style: Option<WireStyle>,
     pub drag_over_style: Option<WireStyle>,
+    /// How a `<scrollbar>`'s thumb is painted.
+    pub thumb_style: Option<WireStyle>,
     pub animation: Option<WireAnimation>,
     pub listeners: HashSet<String>,
     pub element_id: ElementId,
@@ -80,8 +82,11 @@ pub struct Node {
     /// The draw list a `<canvas>` carries, parsed once when it is set rather
     /// than on every repaint.
     pub commands: Option<Vec<crate::canvas::Command>>,
-    /// The size a `<canvas>` was last reported at.
+    /// The size last reported to JavaScript, for a node listening for it.
     pub last_size: Cell<Option<(f32, f32)>>,
+    /// Where a drag grabbed a `<scrollbar>`'s thumb, in pixels from its leading
+    /// edge. Shared with the element, which is rebuilt on every frame.
+    pub grab: std::rc::Rc<Cell<Option<f32>>>,
 }
 
 impl Node {
@@ -100,6 +105,7 @@ impl Node {
             group_hover_style: None,
             group_active_style: None,
             drag_over_style: None,
+            thumb_style: None,
             animation: None,
             listeners: HashSet::new(),
             element_id: ElementId::Integer(id),
@@ -117,6 +123,7 @@ impl Node {
             last_follow: Cell::new(None),
             commands: None,
             last_size: Cell::new(None),
+            grab: std::rc::Rc::new(Cell::new(None)),
         }
     }
 
@@ -253,18 +260,28 @@ impl Tree {
         // node is mutably borrowed.
         match key {
             "focusable" | "tabIndex" | "autofocus" => self.ensure_focus(id, cx),
-            // A `<list>` scrolls through its own `ListState`, so only the
-            // uniform list needs a handle here.
-            "scrollToItem" => {
-                if let Some(node) = self.nodes.get_mut(&id)
-                    && node.tag == "uniform-list"
-                    && node.list_scroll.is_none()
-                {
-                    node.list_scroll = Some(UniformListScrollHandle::new());
-                }
-            }
             "scrollTop" | "scrollLeft" => {
                 if let Some(node) = self.nodes.get_mut(&id)
+                    && node.scroll.is_none()
+                {
+                    node.scroll = Some(ScrollHandle::new());
+                }
+            }
+            // An element that scrolls owns a handle whether or not anything has
+            // asked about it yet, because a `<scrollbar>` pointed at it needs
+            // one on the frame it first renders, and it cannot reach back and
+            // add it then.
+            "style" => {
+                let scrolls = value
+                    .get("overflow")
+                    .map(|overflow| {
+                        ["x", "y"].iter().any(|axis| {
+                            overflow.get(axis).and_then(Value::as_str) == Some("scroll")
+                        })
+                    })
+                    .unwrap_or(false);
+                if scrolls
+                    && let Some(node) = self.nodes.get_mut(&id)
                     && node.scroll.is_none()
                 {
                     node.scroll = Some(ScrollHandle::new());
@@ -275,7 +292,7 @@ impl Tree {
 
         let parsed = match key {
             "style" | "hoverStyle" | "activeStyle" | "groupHoverStyle" | "groupActiveStyle"
-            | "dragOverStyle" => Some(parse_style(&value)),
+            | "dragOverStyle" | "thumbStyle" => Some(parse_style(&value)),
             _ => None,
         };
         let commands = (key == "commands").then(|| {
@@ -348,6 +365,7 @@ impl Tree {
             ("groupHoverStyle", Some(parsed), _) => node.group_hover_style = parsed,
             ("groupActiveStyle", Some(parsed), _) => node.group_active_style = parsed,
             ("dragOverStyle", Some(parsed), _) => node.drag_over_style = parsed,
+            ("thumbStyle", Some(parsed), _) => node.thumb_style = parsed,
             ("animate", _, Some(animation)) => node.animation = animation,
             _ => {
                 if value.is_null() {
@@ -379,10 +397,18 @@ impl Tree {
         match op {
             Op::CreateElement { id, tag, props } => {
                 let is_input = tag == "input";
+                let tag_is_uniform_list = tag == "uniform-list";
                 self.nodes.insert(
                     id,
                     Node::new(id, NodeKind::Element, tag, SharedString::default()),
                 );
+                if tag_is_uniform_list
+                    && let Some(node) = self.nodes.get_mut(&id)
+                {
+                    // Same reason as above: a scrollbar has to find a handle
+                    // already there.
+                    node.list_scroll = Some(UniformListScrollHandle::new());
+                }
                 if is_input {
                     // A text field is always focusable and always owns a buffer.
                     self.ensure_focus(id, cx);

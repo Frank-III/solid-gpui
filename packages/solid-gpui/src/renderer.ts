@@ -37,6 +37,7 @@ const STYLE_PROPS = new Set([
   "groupHoverStyle",
   "groupActiveStyle",
   "dragOverStyle",
+  "thumbStyle",
 ]);
 
 /** The draw function currently set on each `<canvas>`. */

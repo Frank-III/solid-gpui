@@ -67,6 +67,7 @@ function App() {
   const [dropped, setDropped] = createSignal<string | null>(null);
   const [range, setRange] = createSignal({ start: 0, end: 40 });
   const [chat, setChat] = createSignal({ start: 0, end: 20 });
+  const [panelSize, setPanelSize] = createSignal({ width: 0, height: 0 });
 
   const first = () => Math.max(0, range().start - OVERSCAN);
   const last = () => Math.min(TOTAL_ROWS, range().end + OVERSCAN);
@@ -239,36 +240,47 @@ function App() {
 
         <div style={{ ...panel, flexGrow: 1, minWidth: 240 }}>
           <div style={heading}>VIRTUALISED LIST — {TOTAL_ROWS} ROWS</div>
-          <uniform-list
-            count={TOTAL_ROWS}
-            start={first()}
-            onRange={(event) => setRange(event)}
-            style={{ flexGrow: 1, borderRadius: 6, background: palette.background }}
+          <scrollbar
+            style={{ flexGrow: 1, minHeight: 0 }}
+            thumbStyle={{ background: "#ffffff35", borderRadius: 4, minHeight: 24 }}
           >
-            <For each={rows()}>
-              {(index) => (
-                <div
-                  style={{
-                    height: ROW_HEIGHT,
-                    alignItems: "center",
-                    paddingX: 8,
-                    gap: 8,
-                    color: index % 2 === 0 ? palette.text : palette.muted,
-                  }}
-                >
-                  <div style={{ minWidth: 48, color: palette.muted, fontSize: 12 }}>{index}</div>
-                  <div>row number {index}</div>
-                </div>
-              )}
-            </For>
-          </uniform-list>
+            <uniform-list
+              count={TOTAL_ROWS}
+              start={first()}
+              onRange={(event) => setRange(event)}
+              style={{ flexGrow: 1, borderRadius: 6, background: palette.background }}
+            >
+              <For each={rows()}>
+                {(index) => (
+                  <div
+                    style={{
+                      height: ROW_HEIGHT,
+                      alignItems: "center",
+                      paddingX: 8,
+                      gap: 8,
+                      color: index % 2 === 0 ? palette.text : palette.muted,
+                    }}
+                  >
+                    <div style={{ minWidth: 48, color: palette.muted, fontSize: 12 }}>{index}</div>
+                    <div>row number {index}</div>
+                  </div>
+                )}
+              </For>
+            </uniform-list>
+          </scrollbar>
           <div style={{ color: palette.muted, fontSize: 12 }}>
             rendered {first()}–{last()} · viewport {range().start}–{range().end}
           </div>
         </div>
 
-        <div style={{ ...panel, flexGrow: 1, minWidth: 260 }}>
-          <div style={heading}>RICH TEXT</div>
+        <div
+          style={{ ...panel, flexGrow: 1, minWidth: 260 }}
+          onResize={(size) => setPanelSize(size)}
+        >
+          <div style={heading}>
+            RICH TEXT — PANEL IS {Math.round(panelSize().width)}×
+            {Math.round(panelSize().height)}
+          </div>
           <text style={{ lineHeight: 20 }}>
             One string, laid out once, so a line can wrap between{" "}
             <span style={{ color: palette.accent, fontWeight: "semibold" }}>two</span>{" "}

@@ -180,6 +180,7 @@ message naming the fix rather than letting it fail silently.
 | `list` | gpui `list()` | A virtualised list whose rows may each be a different height. |
 | `image-cache` | gpui `image_cache()` | Keeps the images inside it decoded rather than reloading them. |
 | `canvas` | gpui `canvas()` | A surface the application paints itself, from a recorded draw list. |
+| `scrollbar` | custom | Drives another element's scroll position. |
 
 Every element defaults to `display: flex`, not to gpui's own `display: block`.
 That is what makes `flexDirection`, `alignItems`, `justifyContent` and `gap`
@@ -457,6 +458,45 @@ What the context can do, and what it deliberately cannot:
 - **No transform stack, no clipping, no images.** Fold transforms into the
   coordinates before recording them.
 
+## Scrollbars
+
+gpui ships none — it gives an element a scroll offset and a maximum and leaves
+the bar to the application. `<scrollbar>` is that bar, driven from the same
+handles the renderer already keeps.
+
+```tsx
+<scrollbar
+  style={{ flexGrow: 1, minHeight: 0 }}
+  thumbStyle={{ background: "#ffffff35", borderRadius: 4, minHeight: 24 }}
+>
+  <uniform-list count={total} start={first()} onRange={setRange}>
+    …
+  </uniform-list>
+</scrollbar>
+```
+
+It wraps what it scrolls. The bar has to be a *sibling* of the scrolling content
+— placed inside, it would scroll away with it — and wrapping is the arrangement
+where that holds without either element having to name the other. Otherwise it is
+transparent: it stands where a wrapping `<div>` would have stood, and takes the
+style that div would have taken.
+
+It works with anything that scrolls: a `<div>` with `overflow: "scroll"`, a
+`<uniform-list>`, or a `<list>`. The first two scroll by pixels. A `<list>` only
+knows where it is by row — it caches heights as it measures them and never totals
+them up — so its bar moves in whole rows, which shows as a slight step when
+dragging.
+
+`thickness` is how wide the bar is, in pixels; it defaults to 8. `thumbStyle`
+paints the thumb: `background` and `borderRadius`, plus `minHeight` (or
+`minWidth`, when horizontal) to keep it grabbable — a proportional thumb in a
+five-thousand-row list would be a fraction of a pixel wide.
+
+Dragging is handled inside the host rather than through listeners, because a
+listener on the bar stops hearing the mouse the moment it leaves, and a pointer
+wandering off an eight-pixel track mid-drag is the normal case. Clicking the
+track jumps the thumb there.
+
 ## Drag and drop
 
 ```tsx
@@ -552,6 +592,10 @@ re-exported from `solid-js`, which is where the JSX transform imports them from.
 - **A `<list>` shows blank rows for one frame.** gpui asks for a row while it is
   laying out and cannot wait for a round trip, so a row outside the rendered
   window stands in at `itemHeight` until the next frame carries it.
+- **`onResize` needs somewhere to put its measuring layer.** gpui has no hook for
+  an element's size, so it is taken by an empty layer laid over the element. That
+  works for anything that can hold children — everything except `<img>` and
+  `<svg>`.
 - **No `surface`.** It is a macOS video frame source, and the frames cannot cross
   a process boundary. `<canvas>` sidesteps the same problem by recording.
 - **A canvas cannot be read back or measured.** See the section above.

@@ -34,7 +34,7 @@ as `@name` with a boolean value — the closure itself stays in JavaScript, so t
 host only needs to know whether to attach a listener. Presence is what travels,
 which means a changed closure identity costs no traffic.
 
-`style`, `hoverStyle`, `activeStyle` and `groupHoverStyle` carry a normalised
+`style`, `hoverStyle`, `activeStyle`, `groupHoverStyle` and `thumbStyle` carry a normalised
 style object whose field names mirror gpui's `Style`. Lengths are tagged objects
 (`{"k":"px","v":12}`, `{"k":"rem","v":1.5}`, `{"k":"pct","v":0.5}`, `{"k":"auto"}`)
 and colours are HSLA with every channel in 0..1. Shorthand expansion, unit
@@ -66,7 +66,8 @@ Remaining properties are element-specific: `src` on `img`, `path` on `svg`,
 `count`, `start` and `scrollToItem` on `uniform-list`, the same plus
 `insertedAt`, `align`, `overdraw`, `itemHeight` and `follow` on `list`,
 `value`, `placeholder`, `multiline` and `rows` on `input`, `commands` on
-`canvas`,
+`canvas`, `orientation`, `thickness` and `thumbStyle` on `scrollbar` — which scrolls its
+own first element child,
 `anchor`/`position`/`offset`/`snapToWindow` on `anchored`, `priority` on
 `deferred`, and `group`, `groupOf`, `tooltip`, `dragData`, `focusable`,
 `tabIndex`, `autofocus`, `occlude`, `scrollTop` and `scrollLeft` on any element.
@@ -86,8 +87,8 @@ arrives as `keyDown`. Payloads carry positions in logical pixels and modifiers a
 booleans. Events whose payload is a bare value — `hover` — wrap it as
 `{"value": …}`, and events that carry nothing — `focus`, `blur` — send `null`.
 
-`resize` reports the size of a `<canvas>` after it has been laid out, which is
-the only point at which it is known. It is emitted while gpui is laying out, so a
+`resize` reports an element's size after it has been laid out, which is the only
+point at which it is known. It is emitted while gpui is laying out, so a
 drawing that depends on the size lands on the following frame.
 
 Two events are requests rather than notifications. `range` asks for the rows a

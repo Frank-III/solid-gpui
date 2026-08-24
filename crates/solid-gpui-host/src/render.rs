@@ -466,6 +466,7 @@ pub fn build(tree: &Shared, id: NodeId) -> AnyElement {
         "list" => build_list(node, tree),
         "image-cache" => build_image_cache(node, tree),
         "canvas" => build_canvas(node, tree),
+        "scrollbar" => build_scrollbar(node, tree),
         "text" => build_text(node, tree),
         "anchored" => {
             let mut element = anchored();
@@ -514,6 +515,37 @@ pub fn build(tree: &Shared, id: NodeId) -> AnyElement {
     }
 }
 
+/// Reports an element's size, once gpui has laid it out.
+///
+/// gpui has no hook for this, so the size is taken by an empty canvas laid over
+/// the element: positioned absolutely and filling its parent, it measures the
+/// parent without taking any part in its layout. That is also why only elements
+/// which can hold children report their size — an `<img>` has nowhere to put it.
+fn measure<E: ParentElement>(element: E, node: &Node, tree: &Shared) -> E {
+    if !node.listens_to("resize") {
+        return element;
+    }
+    let id = node.id;
+    let sizes = tree.clone();
+    element.child(
+        gpui::canvas(
+            move |bounds, _window, _cx| {
+                let size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+                let borrowed = sizes.borrow();
+                if let Some(node) = borrowed.get(id)
+                    && node.last_size.get() != Some(size)
+                {
+                    node.last_size.set(Some(size));
+                    crate::emit_event(id, "resize", json!({ "width": size.0, "height": size.1 }));
+                }
+            },
+            |_bounds, _prepaint, _window, _cx| {},
+        )
+        .absolute()
+        .size_full(),
+    )
+}
+
 /// A styled, interactive `div` with nothing in it, for the elements that hold
 /// their children some other way than by parenting them.
 fn shell(node: &Node, tree: &Shared) -> Stateful<Div> {
@@ -535,7 +567,7 @@ fn shell(node: &Node, tree: &Shared) -> Stateful<Div> {
             Display::Flex
         });
     }
-    element
+    measure(element, node, tree)
 }
 
 /// Adds a node's children to an element that can hold them.
@@ -589,7 +621,7 @@ fn build_image_cache(node: &Node, tree: &Shared) -> AnyElement {
     if element.style().display.is_none() {
         element.style().display = Some(Display::Flex);
     }
-    finish(append_children(element, node, tree), node)
+    finish(append_children(measure(element, node, tree), node, tree), node)
 }
 
 fn build_input(node: &Node, tree: &Shared) -> AnyElement {
@@ -900,36 +932,62 @@ fn build_list(node: &Node, tree: &Shared) -> AnyElement {
 /// every frame and JavaScript is a process away, so the list of things to draw
 /// arrives as a property and is replayed until it is replaced.
 ///
-/// Its size is reported back through `resize`, because the only thing that knows
-/// it is the layout that has just run.
+/// Its size comes back through `resize`, like any other element's — the only
+/// thing that knows it is the layout that has just run.
 fn build_canvas(node: &Node, tree: &Shared) -> AnyElement {
     let commands = node.commands.clone().unwrap_or_default();
-    let id = node.id;
-    let announce = node.listens_to("resize");
-    let sizes = tree.clone();
-
     let element = gpui::canvas(
-        move |bounds, _window, _cx| {
-            if announce {
-                let size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
-                let borrowed = sizes.borrow();
-                if let Some(node) = borrowed.get(id)
-                    && node.last_size.get() != Some(size)
-                {
-                    node.last_size.set(Some(size));
-                    crate::emit_event(
-                        id,
-                        "resize",
-                        json!({ "width": size.0, "height": size.1 }),
-                    );
-                }
-            }
-            bounds
-        },
+        |bounds, _window, _cx| bounds,
         move |_bounds, bounds, window, cx| crate::canvas::paint(&commands, bounds, window, cx),
     );
 
     finish(shell(node, tree).child(element.size_full()), node)
+}
+
+/// A scrollbar around whatever it scrolls.
+///
+/// It wraps its child rather than pointing at it: the bar has to be a sibling of
+/// the scrolling content — inside it, it would scroll away — and wrapping is the
+/// only arrangement where the thing being scrolled is guaranteed to exist by the
+/// time the bar is built. Otherwise it is transparent: it stands where a
+/// wrapping `<div>` would have stood, and takes the style that div would have.
+fn build_scrollbar(node: &Node, tree: &Shared) -> AnyElement {
+    let borrowed = tree.borrow();
+    let target = node
+        .children
+        .iter()
+        .copied()
+        .find(|child| borrowed.get(*child).is_some_and(|child| child.kind == NodeKind::Element));
+    drop(borrowed);
+    let Some(target) = target else {
+        return finish(container(node, tree), node);
+    };
+
+    let vertical = node.prop_str("orientation") != Some("horizontal");
+    let thickness = px(node.prop_f32("thickness").unwrap_or(8.));
+    let bar = crate::scrollbar::Scrollbar {
+        id: node.id,
+        target,
+        tree: tree.clone(),
+        vertical,
+        thumb: node.thumb_style.clone(),
+        grab: node.grab.clone(),
+    };
+
+    let mut element = shell(node, tree);
+    // The bar is placed against an edge of this element, so this element is what
+    // "absolute" resolves against.
+    if element.style().position.is_none() {
+        element.style().position = Some(gpui::Position::Relative);
+    }
+    element = element.child(build(tree, target));
+
+    let mut track = div().absolute();
+    track = match vertical {
+        true => track.top_0().right_0().bottom_0().w(thickness),
+        false => track.left_0().right_0().bottom_0().h(thickness),
+    };
+    finish(element.child(track.child(bar)), node)
 }
 
 /// One run of text inside a `<text>`: either a bare string, or a `<span>` that
