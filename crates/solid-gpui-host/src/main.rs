@@ -6,6 +6,7 @@
 //! to the mirrored tree and marks the root entity dirty. Everything that flows
 //! back to JavaScript is a single JSON line on stdout.
 
+mod canvas;
 mod input;
 mod protocol;
 mod render;

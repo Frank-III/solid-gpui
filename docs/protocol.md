@@ -54,10 +54,19 @@ alone; the host builds it on demand.
 `animate` carries `{duration_ms, from, to, repeat, easing, max_fps}`, where
 `from` and `to` are style objects in the same normalised form.
 
+`commands` carries a `<canvas>`'s recording: an array of tagged objects, one per
+thing to draw, in coordinates local to the element. `{"k":"quad"}` has `x`, `y`,
+`w`, `h` and optional `background`, `radius`, `border_width` and `border_color`;
+`{"k":"path"}` has `points` — each `{x, y}`, optionally with a quadratic control
+point as `cx`/`cy` — and a `color`; `{"k":"text"}` has `x`, `y`, `text` and
+optional `font_size` and `color`. The host replays the last recording it received
+on every repaint, so a drawing is replaced rather than added to.
+
 Remaining properties are element-specific: `src` on `img`, `path` on `svg`,
 `count`, `start` and `scrollToItem` on `uniform-list`, the same plus
 `insertedAt`, `align`, `overdraw`, `itemHeight` and `follow` on `list`,
-`value` and `placeholder` on `input`,
+`value`, `placeholder`, `multiline` and `rows` on `input`, `commands` on
+`canvas`,
 `anchor`/`position`/`offset`/`snapToWindow` on `anchored`, `priority` on
 `deferred`, and `group`, `groupOf`, `tooltip`, `dragData`, `focusable`,
 `tabIndex`, `autofocus`, `occlude`, `scrollTop` and `scrollLeft` on any element.
@@ -76,6 +85,10 @@ Event names drop the `on` prefix and lower-case the first letter, so `onKeyDown`
 arrives as `keyDown`. Payloads carry positions in logical pixels and modifiers as
 booleans. Events whose payload is a bare value — `hover` — wrap it as
 `{"value": …}`, and events that carry nothing — `focus`, `blur` — send `null`.
+
+`resize` reports the size of a `<canvas>` after it has been laid out, which is
+the only point at which it is known. It is emitted while gpui is laying out, so a
+drawing that depends on the size lands on the following frame.
 
 Two events are requests rather than notifications. `range` asks for the rows a
 virtualised list needs, and is emitted while gpui is laying out, so the answer

@@ -213,6 +213,10 @@ describe("newer elements", () => {
         <input value="hello" placeholder="type" />
         <uniform-list count={1000} start={0} />
         <list count={1000} start={0} />
+        <image-cache>
+          <img src="a.png" />
+        </image-cache>
+        <canvas draw={() => {}} />
         <text>
           plain <span style={{ color: "#f00" }}>red</span>
         </text>
@@ -230,6 +234,8 @@ describe("newer elements", () => {
         "list",
         "text",
         "span",
+        "image-cache",
+        "canvas",
       ]),
     );
   });
@@ -302,6 +308,51 @@ describe("newer elements", () => {
       },
       "@click": true,
     });
+  });
+
+  it("sends a multi-line field's own props", async () => {
+    const host = await mount(() => <input multiline rows={4} value={"a\nb"} />);
+    expect(created(host, "input")?.[3]).toMatchObject({
+      multiline: true,
+      rows: 4,
+      value: "a\nb",
+    });
+  });
+
+  it("records a canvas drawing and sends it as one property", async () => {
+    const host = await mount(() => (
+      <canvas
+        draw={(ctx) => {
+          ctx.fillStyle = "#ff0000";
+          ctx.fillRect(1, 2, 3, 4);
+        }}
+      />
+    ));
+    // The size is only known once the host has laid the element out, so the
+    // canvas asks to hear about it — after the element exists, since nothing
+    // may refer to it before then.
+    const listener = host.operations.find(
+      (operation) => operation[0] === Op.SetProp && operation[2] === "@resize",
+    );
+    expect(listener?.[3]).toBe(true);
+    const commands = host.operations
+      .filter((operation) => operation[0] === Op.SetProp && operation[2] === "commands")
+      .at(-1);
+    expect(commands?.[3]).toEqual([
+      { k: "quad", x: 1, y: 2, w: 3, h: 4, background: { h: 0, s: 1, l: 0.5, a: 1 } },
+    ]);
+  });
+
+  it("re-records a canvas drawing when its size arrives", async () => {
+    const host = await mount(() => <canvas draw={(ctx) => ctx.fillRect(0, 0, ctx.width, 10)} />);
+    const canvas = created(host, "canvas")?.[1] as number;
+    host.emit({ t: "e", id: canvas, n: "resize", d: { width: 120, height: 40 } });
+    flush();
+    await tick();
+    const commands = host.operations
+      .filter((operation) => operation[0] === Op.SetProp && operation[2] === "commands")
+      .at(-1);
+    expect(commands?.[3]).toMatchObject([{ k: "quad", w: 120 }]);
   });
 
   it("re-renders a list's rows when the window moves", async () => {

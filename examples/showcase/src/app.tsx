@@ -35,6 +35,11 @@ const button: GpuiStyle = {
 
 const heading: GpuiStyle = { fontSize: 12, fontWeight: "semibold", color: palette.muted };
 
+/** Deterministic, so a reload draws the same chart. */
+const SERIES = Array.from({ length: 24 }, (_, index) =>
+  0.35 + 0.3 * Math.sin(index / 2.5) + 0.2 * Math.sin(index / 1.3),
+);
+
 const ROW_HEIGHT = 24;
 const TOTAL_ROWS = 5000;
 const OVERSCAN = 20;
@@ -56,6 +61,7 @@ const messages = Array.from({ length: 2000 }, (_, index) => ({
 
 function App() {
   const [name, setName] = createSignal("");
+  const [note, setNote] = createSignal("");
   const [focused, setFocused] = createSignal(false);
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [dropped, setDropped] = createSignal<string | null>(null);
@@ -120,6 +126,22 @@ function App() {
             </Show>
           </div>
 
+          <input
+            multiline
+            rows={3}
+            value={note()}
+            placeholder="a multi-line field: it wraps, and return makes a new line"
+            onInput={(event) => setNote(event.value)}
+            style={{
+              paddingX: 8,
+              paddingY: 6,
+              borderRadius: 6,
+              borderWidth: 1,
+              borderColor: palette.border,
+              background: palette.background,
+            }}
+          />
+
           <div style={heading}>TOOLTIP AND POPOVER</div>
           <div style={{ gap: 8, alignItems: "center" }}>
             <div
@@ -165,6 +187,35 @@ function App() {
               </anchored>
             </deferred>
           </Show>
+
+          <div style={heading}>CANVAS</div>
+          <canvas
+            style={{ height: 90, borderRadius: 6, background: palette.background }}
+            draw={(ctx) => {
+              const points = SERIES.length;
+              const step = ctx.width / (points - 1 || 1);
+              const scale = (value: number) => ctx.height - 8 - value * (ctx.height - 16);
+
+              ctx.fillStyle = palette.raised;
+              for (let index = 0; index < points; index += 1) {
+                const height = SERIES[index]! * (ctx.height - 16);
+                ctx.fillRect(index * step + 2, ctx.height - 8 - height, step - 4, height, 2);
+              }
+
+              ctx.strokeStyle = palette.accent;
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(0, scale(SERIES[0]!));
+              for (let index = 1; index < points; index += 1) {
+                ctx.lineTo(index * step, scale(SERIES[index]!));
+              }
+              ctx.stroke();
+
+              ctx.fillStyle = palette.muted;
+              ctx.fontSize = 10;
+              ctx.fillText(`${points} points, drawn from JavaScript`, 4, 2);
+            }}
+          />
 
           <div style={heading}>DRAG AND DROP</div>
           <div style={{ gap: 8 }}>

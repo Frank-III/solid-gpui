@@ -77,6 +77,11 @@ pub struct Node {
     pub last_scroll_to: Cell<Option<usize>>,
     /// Whether a `<list>` was last set to follow its tail.
     pub last_follow: Cell<Option<bool>>,
+    /// The draw list a `<canvas>` carries, parsed once when it is set rather
+    /// than on every repaint.
+    pub commands: Option<Vec<crate::canvas::Command>>,
+    /// The size a `<canvas>` was last reported at.
+    pub last_size: Cell<Option<(f32, f32)>>,
 }
 
 impl Node {
@@ -110,6 +115,8 @@ impl Node {
             last_scroll: Cell::new(None),
             last_scroll_to: Cell::new(None),
             last_follow: Cell::new(None),
+            commands: None,
+            last_size: Cell::new(None),
         }
     }
 
@@ -271,6 +278,17 @@ impl Tree {
             | "dragOverStyle" => Some(parse_style(&value)),
             _ => None,
         };
+        let commands = (key == "commands").then(|| {
+            if value.is_null() {
+                None
+            } else {
+                serde_json::from_value::<Vec<crate::canvas::Command>>(value.clone())
+                    .map_err(|error| {
+                        crate::emit_log(format!("ignoring unparsable draw list: {error}"))
+                    })
+                    .ok()
+            }
+        });
         let animation = (key == "animate").then(|| {
             if value.is_null() {
                 None
@@ -301,10 +319,28 @@ impl Tree {
                 cx.notify();
             });
         }
+        let input = self.nodes.get(&id).and_then(|node| node.input.clone());
+        if (key == "multiline" || key == "rows")
+            && let Some(input) = input
+        {
+            let multiline = key == "multiline" && value.as_bool().unwrap_or(false);
+            let rows = value.as_u64().unwrap_or(0) as usize;
+            input.update(cx, |state, cx| {
+                match key {
+                    "multiline" => state.multiline = multiline,
+                    _ => state.rows = rows.max(1),
+                }
+                cx.notify();
+            });
+        }
 
         let Some(node) = self.nodes.get_mut(&id) else {
             return;
         };
+        if let Some(commands) = commands {
+            node.commands = commands;
+            return;
+        }
         match (key, parsed, animation) {
             ("style", Some(parsed), _) => node.style = parsed,
             ("hoverStyle", Some(parsed), _) => node.hover_style = parsed,

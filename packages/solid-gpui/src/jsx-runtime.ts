@@ -10,6 +10,7 @@
  * reconciliation possible in the first place.
  */
 
+import type { Draw } from "./canvas.js";
 import type { GpuiNode } from "./node.js";
 import type { AnimationSpec, GpuiStyle } from "./style.js";
 import type {
@@ -137,10 +138,49 @@ export interface InputProps extends Omit<ElementProps, "children"> {
   value?: string;
   /** Shown, dimmed, while the value is empty. */
   placeholder?: string;
+  /**
+   * Wraps, grows to fit its content, and takes newlines from the return key and
+   * the clipboard. Without it the field is one line and the return key falls
+   * through to whatever else is listening for it.
+   */
+  multiline?: boolean;
+  /** The fewest lines a `multiline` field occupies. Defaults to one. */
+  rows?: number;
   /** Fires on every edit. */
   onInput?: (event: InputEvent) => void;
   /** Fires when the element loses focus after an edit. */
   onChange?: (event: InputEvent) => void;
+}
+
+/**
+ * A scope in which every `<img>` shares one cache.
+ *
+ * gpui drops a decoded image as soon as nothing paints it, so an image scrolled
+ * out of a list is decoded again on the way back. This keeps them.
+ *
+ * It lays out exactly like the `<div>` it replaces, but it is not interactive:
+ * gpui's cache element is styled and holds children, and is neither hoverable
+ * nor clickable. Put listeners on something inside it.
+ */
+/**
+ * A surface the application draws on itself.
+ *
+ * `draw` records what to paint; it runs in an effect, so it re-records whenever
+ * something it read changes, including the element's own size. Coordinates are
+ * local to the element, and there is no readback — the pixels live on the GPU in
+ * the host process.
+ */
+export interface CanvasProps extends Omit<ElementProps, "children"> {
+  draw?: Draw;
+  /** Fires when the element's size changes, after it has been laid out. */
+  onResize?: (size: { width: number; height: number }) => void;
+}
+
+export interface ImageCacheProps {
+  style?: GpuiStyle;
+  animate?: AnimationSpec;
+  ref?: GpuiNode | ((element: GpuiNode) => void);
+  children?: GpuiChild;
 }
 
 export interface ListProps extends ElementProps {
@@ -258,11 +298,15 @@ export namespace JSX {
     anchored: AnchoredProps;
     /** Paints its child after its siblings, above them. */
     deferred: DeferredProps;
-    /** A single-line text field whose buffer lives in the host. */
+    /** A text field whose buffer lives in the host; `multiline` makes it wrap. */
     input: InputProps;
     /** A virtualised list of equal-height rows. */
     "uniform-list": UniformListProps;
     /** A virtualised list whose rows may each be a different height. */
     list: ListProps;
+    /** Keeps the images inside it decoded, instead of reloading them each time. */
+    "image-cache": ImageCacheProps;
+    /** A surface the application paints itself, from a recorded draw list. */
+    canvas: CanvasProps;
   }
 }

@@ -104,6 +104,12 @@ export interface RangeEvent {
   end: number;
 }
 
+/** The size of a `<canvas>`, once the host has laid it out. */
+export interface ResizeEvent {
+  width: number;
+  height: number;
+}
+
 /** Fired when the pointer enters or leaves an element. */
 export type HoverEvent = boolean;
 
@@ -128,6 +134,7 @@ export interface EventMap {
   input: InputEvent;
   change: InputEvent;
   range: RangeEvent;
+  resize: ResizeEvent;
 }
 
 export type EventName = keyof EventMap;
@@ -153,6 +160,7 @@ const EVENT_NAMES = new Set<string>([
   "input",
   "change",
   "range",
+  "resize",
 ]);
 
 /**

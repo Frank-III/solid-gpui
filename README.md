@@ -175,9 +175,11 @@ message naming the fix rather than letting it fail silently.
 | `svg` | gpui `svg()` | Takes `path`; painted in the current text colour. |
 | `anchored` | gpui `anchored()` | A floating layer: popovers, dropdowns, context menus. |
 | `deferred` | gpui `deferred()` | Paints after its siblings, so overlays land on top. |
-| `input` | custom | A single-line text field whose buffer lives in the host. |
+| `input` | custom | A text field whose buffer lives in the host; `multiline` makes it wrap. |
 | `uniform-list` | gpui `uniform_list()` | A virtualised list of equal-height rows. |
 | `list` | gpui `list()` | A virtualised list whose rows may each be a different height. |
+| `image-cache` | gpui `image_cache()` | Keeps the images inside it decoded rather than reloading them. |
+| `canvas` | gpui `canvas()` | A surface the application paints itself, from a recorded draw list. |
 
 Every element defaults to `display: flex`, not to gpui's own `display: block`.
 That is what makes `flexDirection`, `alignItems`, `justifyContent` and `gap`
@@ -324,6 +326,19 @@ the platform reports them.
 Editing keys — arrows, shift-arrows, home, end, backspace, delete, select-all,
 cut, copy, paste — are bound by the host.
 
+`multiline` makes the field wrap, grow to fit what it holds, and take newlines
+from the return key and the clipboard. Up and down move by row, and home and end
+go to the ends of the row rather than of the buffer. `rows` sets the fewest lines
+it occupies; it grows from there and does not scroll, so cap it with a
+`maxHeight` if the text can run long.
+
+```tsx
+<input multiline rows={3} value={note()} onInput={(event) => setNote(event.value)} />
+```
+
+Without `multiline` the field is one line and the return key is left alone, so an
+application can bind it to submitting the form.
+
 ## Virtualised lists
 
 ```tsx
@@ -392,6 +407,55 @@ Rows are asked for in chunks, and a request for a row far from the ones already
 rendered replaces the standing request rather than widening it — a list anchored
 to its bottom starts laying out from its last row while JavaScript is still
 showing its first, and widening across that gap would ask for the entire list.
+
+## Canvas
+
+`draw` records what to paint. It runs in an effect, so it re-records whenever
+something it read changes — including the element's own size, which only becomes
+known once the host has laid it out:
+
+```tsx
+<canvas
+  style={{ height: 90 }}
+  draw={(ctx) => {
+    ctx.fillStyle = "#7aa2f7";
+    ctx.fillRect(0, 0, ctx.width, 4);
+    ctx.strokeStyle = "#9ece6a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, ctx.height);
+    for (const [index, value] of series().entries()) ctx.lineTo(index * 8, value);
+    ctx.stroke();
+  }}
+/>
+```
+
+A canvas here is not immediate-mode. gpui rebuilds its scene every frame and the
+drawing code is a process away, so nothing can be asked to draw while a frame is
+being built. The recording is a property like any other: the host replays it on
+every repaint until a new one replaces it. Re-recording is how the picture
+changes, which is what a reactive renderer wants anyway.
+
+Coordinates are local to the element, so a recording keeps working when the
+element moves.
+
+What the context can do, and what it deliberately cannot:
+
+- `fillRect`, `strokeRect` take an optional corner radius; gpui draws rounded
+  rectangles directly, so a chart made of bars costs no triangulation.
+- `beginPath`, `moveTo`, `lineTo`, `quadraticCurveTo`, `closePath`, `fill`.
+  Curves are quadratic, because gpui's paths are.
+- `stroke` exists, but gpui fills paths and cannot stroke them, so each segment
+  becomes the quadrilateral covering it — butt joints, and curves are flattened
+  first. A stroked curve costs more than a filled one.
+- `fillText` draws one line, positioned by its top-left corner, in the font the
+  element inherits.
+- **No readback.** `getImageData` and `toDataURL` have no answer to give: the
+  pixels are on the GPU, in the host process.
+- **No `measureText`.** The font system is in the host, so an answer could not be
+  returned synchronously — which is the only way the web's is useful.
+- **No transform stack, no clipping, no images.** Fold transforms into the
+  coordinates before recording them.
 
 ## Drag and drop
 
@@ -485,12 +549,12 @@ re-exported from `solid-js`, which is where the JSX transform imports them from.
 ## Current limitations
 
 - **One window per process.** The protocol has a single root.
-- **Single-line text only.** `<input>` has no multi-line mode.
 - **A `<list>` shows blank rows for one frame.** gpui asks for a row while it is
   laying out and cannot wait for a round trip, so a row outside the rendered
   window stands in at `itemHeight` until the next frame carries it.
-- **No `canvas` or `surface`.** Both are built on per-frame callbacks — a paint
-  closure, a video frame source — that cannot cross a process boundary.
+- **No `surface`.** It is a macOS video frame source, and the frames cannot cross
+  a process boundary. `<canvas>` sidesteps the same problem by recording.
+- **A canvas cannot be read back or measured.** See the section above.
 - **Scrolling reports one frame late.** `onScroll` is emitted from the following
   render, since the offset is only known after gpui applies it.
 

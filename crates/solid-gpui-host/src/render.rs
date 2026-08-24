@@ -14,13 +14,14 @@ use gpui::{
     ListAlignment, ListState, MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent,
     MousePressureEvent, MouseUpEvent, ParentElement, PinchEvent, Point, Render, ScrollDelta,
     ScrollWheelEvent, SharedString, StatefulInteractiveElement, Stateful, Styled, StyleRefinement,
-    StyledText, Window, anchored, deferred, div, hsla, img, list, px, svg, uniform_list,
+    StyledText, Window, anchored, deferred, div, hsla, image_cache, img, list, px, retain_all,
+    svg, uniform_list,
 };
 use serde_json::{Value, json};
 
 use crate::input::{
-    Backspace, Copy, Cut, Delete, End, Home, Left, Paste, Right, SelectAll, SelectLeft, SelectRight,
-    ShowCharacterPalette, TextElement,
+    Backspace, Copy, Cut, Delete, Down, End, Home, Left, Newline, Paste, Right, SelectAll,
+    SelectDown, SelectLeft, SelectRight, SelectUp, ShowCharacterPalette, TextElement, Up,
 };
 use crate::protocol::NodeId;
 use crate::style::{self, WireStyle, WireTextStyle};
@@ -463,6 +464,8 @@ pub fn build(tree: &Shared, id: NodeId) -> AnyElement {
         "input" => build_input(node, tree),
         "uniform-list" => build_uniform_list(node, tree),
         "list" => build_list(node, tree),
+        "image-cache" => build_image_cache(node, tree),
+        "canvas" => build_canvas(node, tree),
         "text" => build_text(node, tree),
         "anchored" => {
             let mut element = anchored();
@@ -535,12 +538,12 @@ fn shell(node: &Node, tree: &Shared) -> Stateful<Div> {
     element
 }
 
-/// A styled, interactive `div` holding the node's children.
-fn container(node: &Node, tree: &Shared) -> Stateful<Div> {
-    let mut element = shell(node, tree);
-    // Consecutive text nodes are concatenated: `<div>#{n}</div>` compiles to two
-    // adjacent text nodes, and emitting them as two children would lay them out
-    // as two boxes instead of one run of text.
+/// Adds a node's children to an element that can hold them.
+///
+/// Consecutive text nodes are concatenated: `<div>#{n}</div>` compiles to two
+/// adjacent text nodes, and emitting them as two children would lay them out as
+/// two boxes instead of one run of text.
+fn append_children<E: ParentElement>(mut element: E, node: &Node, tree: &Shared) -> E {
     let borrowed = tree.borrow();
     let mut run = String::new();
     for child in &node.children {
@@ -561,6 +564,32 @@ fn container(node: &Node, tree: &Shared) -> Stateful<Div> {
         element = element.child(SharedString::from(run));
     }
     element
+}
+
+/// A styled, interactive `div` holding the node's children.
+fn container(node: &Node, tree: &Shared) -> Stateful<Div> {
+    append_children(shell(node, tree), node, tree)
+}
+
+/// A scope in which every `<img>` shares one cache.
+///
+/// gpui drops a decoded image as soon as nothing is painting it, so an image
+/// scrolled out of a list is decoded again when it comes back. Wrapping the list
+/// in this keeps them.
+///
+/// It carries the node's style, so it lays out exactly like the `<div>` it
+/// replaces, but it is not interactive: gpui's cache element is styled and can
+/// hold children, and is neither hoverable nor clickable. Put listeners on
+/// something inside it.
+fn build_image_cache(node: &Node, tree: &Shared) -> AnyElement {
+    let mut element = image_cache(retain_all(node.element_id.clone()));
+    if let Some(base) = node.style.as_ref() {
+        style::apply(base, element.style());
+    }
+    if element.style().display.is_none() {
+        element.style().display = Some(Display::Flex);
+    }
+    finish(append_children(element, node, tree), node)
 }
 
 fn build_input(node: &Node, tree: &Shared) -> AnyElement {
@@ -598,6 +627,11 @@ fn build_input(node: &Node, tree: &Shared) -> AnyElement {
     action!(Copy, copy);
     action!(Cut, cut);
     action!(ShowCharacterPalette, show_character_palette);
+    action!(Up, up);
+    action!(Down, down);
+    action!(SelectUp, select_up);
+    action!(SelectDown, select_down);
+    action!(Newline, newline);
 
     let down = state.clone();
     element = element.on_mouse_down(MouseButton::Left, move |event, window, cx| {
@@ -858,6 +892,44 @@ fn build_list(node: &Node, tree: &Shared) -> AnyElement {
         wrapper.style().min_size.height = Some(px(0.).into());
     }
     finish(wrapper.child(element.size_full()), node)
+}
+
+/// A surface the application draws on itself.
+///
+/// The drawing is a recording, not a callback: gpui repaints from its own scene
+/// every frame and JavaScript is a process away, so the list of things to draw
+/// arrives as a property and is replayed until it is replaced.
+///
+/// Its size is reported back through `resize`, because the only thing that knows
+/// it is the layout that has just run.
+fn build_canvas(node: &Node, tree: &Shared) -> AnyElement {
+    let commands = node.commands.clone().unwrap_or_default();
+    let id = node.id;
+    let announce = node.listens_to("resize");
+    let sizes = tree.clone();
+
+    let element = gpui::canvas(
+        move |bounds, _window, _cx| {
+            if announce {
+                let size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+                let borrowed = sizes.borrow();
+                if let Some(node) = borrowed.get(id)
+                    && node.last_size.get() != Some(size)
+                {
+                    node.last_size.set(Some(size));
+                    crate::emit_event(
+                        id,
+                        "resize",
+                        json!({ "width": size.0, "height": size.1 }),
+                    );
+                }
+            }
+            bounds
+        },
+        move |_bounds, bounds, window, cx| crate::canvas::paint(&commands, bounds, window, cx),
+    );
+
+    finish(shell(node, tree).child(element.size_full()), node)
 }
 
 /// One run of text inside a `<text>`: either a bare string, or a `<span>` that
