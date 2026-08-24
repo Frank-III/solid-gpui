@@ -10,10 +10,11 @@ use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AppContext, ClickEvent, Context, CursorStyle, Display,
-    Div, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseExitEvent,
-    MouseMoveEvent, MousePressureEvent, MouseUpEvent, ParentElement, PinchEvent, Point, Render,
-    ScrollDelta, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Stateful, Styled,
-    StyleRefinement, Window, anchored, deferred, div, hsla, img, px, svg, uniform_list,
+    Div, FollowMode, HighlightStyle, InteractiveElement, InteractiveText, IntoElement, KeyDownEvent,
+    ListAlignment, ListState, MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent,
+    MousePressureEvent, MouseUpEvent, ParentElement, PinchEvent, Point, Render, ScrollDelta,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Stateful, Styled, StyleRefinement,
+    StyledText, Window, anchored, deferred, div, hsla, img, list, px, svg, uniform_list,
 };
 use serde_json::{Value, json};
 
@@ -22,7 +23,7 @@ use crate::input::{
     ShowCharacterPalette, TextElement,
 };
 use crate::protocol::NodeId;
-use crate::style::{self, WireStyle};
+use crate::style::{self, WireStyle, WireTextStyle};
 use crate::tree::{Node, NodeKind, Tree};
 
 /// The tree is shared rather than borrowed for the whole build because two
@@ -461,6 +462,8 @@ pub fn build(tree: &Shared, id: NodeId) -> AnyElement {
         }
         "input" => build_input(node, tree),
         "uniform-list" => build_uniform_list(node, tree),
+        "list" => build_list(node, tree),
+        "text" => build_text(node, tree),
         "anchored" => {
             let mut element = anchored();
             if let Some(name) = node.prop_str("anchor") {
@@ -508,8 +511,9 @@ pub fn build(tree: &Shared, id: NodeId) -> AnyElement {
     }
 }
 
-/// A styled, interactive `div` holding the node's children.
-fn container(node: &Node, tree: &Shared) -> Stateful<Div> {
+/// A styled, interactive `div` with nothing in it, for the elements that hold
+/// their children some other way than by parenting them.
+fn shell(node: &Node, tree: &Shared) -> Stateful<Div> {
     let mut element = decorate(div().id(node.element_id.clone()), node, tree);
     // gpui's `Style::default()` is `display: block`, which is why hand-written
     // gpui code calls `.flex()` on nearly every div. The element model this
@@ -517,8 +521,23 @@ fn container(node: &Node, tree: &Shared) -> Stateful<Div> {
     // `justifyContent` and `gap` are documented to work on a bare `<div>` — so
     // anything that did not ask for another display gets flex.
     if element.style().display.is_none() {
-        element.style().display = Some(Display::Flex);
+        // gpui measures a line of text at its full width even when asked for
+        // the smallest it could be, so as a flex item it would never shrink,
+        // and a long line would run out of its container instead of wrapping.
+        // Laid out as a block it is handed the container's width and wraps
+        // within it, which is what `<text>` is for.
+        element.style().display = Some(if node.tag == "text" {
+            Display::Block
+        } else {
+            Display::Flex
+        });
     }
+    element
+}
+
+/// A styled, interactive `div` holding the node's children.
+fn container(node: &Node, tree: &Shared) -> Stateful<Div> {
+    let mut element = shell(node, tree);
     // Consecutive text nodes are concatenated: `<div>#{n}</div>` compiles to two
     // adjacent text nodes, and emitting them as two children would lay them out
     // as two boxes instead of one run of text.
@@ -687,6 +706,281 @@ fn build_uniform_list(node: &Node, tree: &Shared) -> AnyElement {
         decorate(element.id(node.element_id.clone()), node, tree),
         node,
     )
+}
+
+/// Rows are asked for in chunks. gpui walks a variable-height list one index at
+/// a time, so an unchunked request would send one message per row scrolled past.
+const LIST_CHUNK: usize = 16;
+
+/// Asks JavaScript for a range of rows, if it is not the range already asked
+/// for. `grow` widens the standing request instead of replacing it: the rows a
+/// frame turns out to need arrive one index at a time, and each one has to add
+/// to what came before rather than narrow the window to itself. A scroll
+/// replaces the request outright, which is what keeps the window from growing
+/// to cover the whole list.
+fn request_rows(tree: &Shared, id: NodeId, start: usize, end: usize, grow: bool) {
+    let borrowed = tree.borrow();
+    let Some(node) = borrowed.get(id) else { return };
+    if !node.listens_to("range") {
+        return;
+    }
+    let count = node.prop_usize("count").unwrap_or(0);
+    let (mut start, mut end) = (start, end);
+    if grow
+        && let Some((held, held_end)) = node.last_range.get()
+        // Only rows next to the standing request join it. A list anchored to
+        // its bottom starts laying out from the last row while JavaScript is
+        // still showing the first, and widening the request to span both would
+        // ask for every row in between — the whole list.
+        && start + LIST_CHUNK >= held
+        && end <= held_end + LIST_CHUNK
+    {
+        start = start.min(held);
+        end = end.max(held_end);
+    }
+    let start = (start / LIST_CHUNK) * LIST_CHUNK;
+    let end = (end.div_ceil(LIST_CHUNK) * LIST_CHUNK).min(count);
+    if end <= start {
+        return;
+    }
+    if node.last_range.get() == Some((start, end)) {
+        return;
+    }
+    node.last_range.set(Some((start, end)));
+    crate::emit_event(id, "range", json!({ "start": start, "end": end }));
+}
+
+/// A virtualised list whose rows may each be a different height.
+///
+/// Unlike a uniform list, gpui caches the height of every row it has measured,
+/// which is what lets it scroll without laying the whole list out. The cache is
+/// the reason this element carries more state than the others: it has to be
+/// told when rows are inserted, and when a row that was a stand-in has been
+/// replaced by the real thing.
+fn build_list(node: &Node, tree: &Shared) -> AnyElement {
+    let count = node.prop_usize("count").unwrap_or(0);
+    let start = node.prop_usize("start").unwrap_or(0);
+    let children = node.children.clone();
+    let window = (start, start + children.len());
+    let id = node.id;
+
+    // Bound before the match: the borrow behind a `match` scrutinee lives to the
+    // end of the match, and the arm that has to build the state writes to it.
+    let existing = node.list.borrow().clone();
+    let state = match existing {
+        Some(state) => state,
+        None => {
+            // Built here rather than when `count` arrived, because the props
+            // that configure it come in the same batch and in no fixed order.
+            let alignment = match node.prop_str("align") {
+                Some("bottom") => ListAlignment::Bottom,
+                _ => ListAlignment::Top,
+            };
+            let overdraw = px(node.prop_f32("overdraw").unwrap_or(256.));
+            let mut created = ListState::new(count, alignment, overdraw);
+            if let Some(height) = node.prop_f32("itemHeight") {
+                created = created.with_uniform_item_height(px(height));
+            }
+            let rows = tree.clone();
+            created.set_scroll_handler(move |event, _window, _cx| {
+                let visible = &event.visible_range;
+                request_rows(&rows, id, visible.start, visible.end, false);
+            });
+            node.list_count.set(count);
+            *node.list.borrow_mut() = Some(created.clone());
+            created
+        }
+    };
+
+    // Rows outside the window are drawn as empty stand-ins, and their heights
+    // are cached like any other. Whenever the window moves, the rows it now
+    // covers are measured again so the stand-in heights do not persist.
+    if node.last_window.get() != Some(window) {
+        node.last_window.set(Some(window));
+        let end = window.1.min(count);
+        if end > window.0 {
+            state.remeasure_items(window.0..end);
+        }
+    }
+
+    let follow = node.prop_str("follow") == Some("tail");
+    if node.last_follow.get() != Some(follow) {
+        node.last_follow.set(Some(follow));
+        state.set_follow_mode(if follow {
+            FollowMode::Tail
+        } else {
+            FollowMode::Normal
+        });
+    }
+
+    // Only on change: scrolling to the same row on every repaint would pin the
+    // list there and fight the user trying to scroll away from it.
+    let requested = node.prop_usize("scrollToItem");
+    if requested != node.last_scroll_to.get() {
+        node.last_scroll_to.set(requested);
+        if let Some(index) = requested {
+            state.scroll_to_reveal_item(index);
+        }
+    }
+
+    // A stand-in row is measured like any other, and a row measured at nothing
+    // would tell the list that the whole of it fits on screen — which is the
+    // one answer that makes it ask for every row at once. `itemHeight` is the
+    // guess to use; the row is measured again for real once it arrives.
+    let placeholder = px(node.prop_f32("itemHeight").unwrap_or(24.));
+
+    let rows = tree.clone();
+    let element = list(state, move |index, _window, _cx| {
+        let child = index
+            .checked_sub(start)
+            .and_then(|offset| children.get(offset));
+        match child {
+            Some(child) => build(&rows, *child),
+            None => {
+                // The list is laying out and cannot wait for a round trip, so
+                // the row is asked for and a blank one of about the right size
+                // stands in until the next frame has it.
+                request_rows(&rows, id, index, index + 1, true);
+                div().h(placeholder).into_any_element()
+            }
+        }
+    });
+
+    let mut wrapper = shell(node, tree);
+    // A scrolling list must not be sized by its contents: a flex item's
+    // automatic minimum is its content, and for a list that is every row it has
+    // measured, which would push the list — and its parent — far past the
+    // window. Naming a `minWidth` or `minHeight` still overrides this.
+    if wrapper.style().min_size.width.is_none() {
+        wrapper.style().min_size.width = Some(px(0.).into());
+    }
+    if wrapper.style().min_size.height.is_none() {
+        wrapper.style().min_size.height = Some(px(0.).into());
+    }
+    finish(wrapper.child(element.size_full()), node)
+}
+
+/// One run of text inside a `<text>`: either a bare string, or a `<span>` that
+/// styles part of it.
+struct TextSegment {
+    text: String,
+    style: Option<WireTextStyle>,
+    span: Option<NodeId>,
+    clickable: bool,
+}
+
+/// Splits a `<text>` into runs, or returns `None` if it holds anything that
+/// cannot be part of one piece of text — a nested element, or a `<span>` around
+/// something other than a string. Those fall back to being laid out as boxes.
+fn text_segments(node: &Node, tree: &Tree) -> Option<Vec<TextSegment>> {
+    let mut segments = Vec::new();
+    for child in &node.children {
+        let child = tree.get(*child)?;
+        match child.kind {
+            NodeKind::Text => segments.push(TextSegment {
+                text: child.text.to_string(),
+                style: None,
+                span: None,
+                clickable: false,
+            }),
+            NodeKind::Element if child.tag == "span" => {
+                let mut text = String::new();
+                for grandchild in &child.children {
+                    let grandchild = tree.get(*grandchild)?;
+                    if grandchild.kind != NodeKind::Text {
+                        return None;
+                    }
+                    text.push_str(&grandchild.text);
+                }
+                segments.push(TextSegment {
+                    text,
+                    style: child.style.as_ref().and_then(|style| style.text.clone()),
+                    span: Some(child.id),
+                    clickable: child.listens_to("click"),
+                });
+            }
+            _ => return None,
+        }
+    }
+    Some(segments)
+}
+
+/// Text whose runs may be styled or clicked individually.
+///
+/// gpui lays a single string out as one block, and only within one block can it
+/// wrap between two differently styled runs. A `<span>` is therefore not an
+/// element of its own: it contributes a range of the surrounding string, and
+/// the fields it can vary are the ones gpui allows to differ run by run.
+fn build_text(node: &Node, tree: &Shared) -> AnyElement {
+    let segments = text_segments(node, &tree.borrow());
+    // Nothing to vary means nothing to gain: plain text lays out the same way
+    // either way, and the container path also accepts children this one cannot.
+    let Some(segments) = segments.filter(|segments| {
+        segments
+            .iter()
+            .any(|segment| segment.style.is_some() || segment.clickable)
+    }) else {
+        return finish(container(node, tree), node);
+    };
+
+    let mut combined = String::new();
+    let mut highlights = Vec::new();
+    let mut families = Vec::new();
+    let mut clickable = Vec::new();
+    let mut targets = Vec::new();
+    for segment in &segments {
+        let from = combined.len();
+        combined.push_str(&segment.text);
+        let range = from..combined.len();
+        if range.is_empty() {
+            continue;
+        }
+        if let Some(style) = &segment.style {
+            let highlight = style::highlight(style);
+            if highlight != HighlightStyle::default() {
+                highlights.push((range.clone(), highlight));
+            }
+            // The family is not part of a highlight; gpui resolves it in a
+            // separate pass so it can be applied over the inherited style.
+            if let Some(family) = &style.font_family {
+                families.push((range.clone(), SharedString::from(family.clone())));
+            }
+        }
+        if let (true, Some(span)) = (segment.clickable, segment.span) {
+            clickable.push(range);
+            targets.push(span);
+        }
+    }
+
+    let mut styled = StyledText::new(combined);
+    if !highlights.is_empty() {
+        // `with_highlights` rather than `with_default_highlights`: the runs are
+        // resolved at layout, over whatever text style the element inherits,
+        // so a `<span>` only overrides the fields it actually names.
+        styled = styled.with_highlights(highlights);
+    }
+    if !families.is_empty() {
+        styled = styled.with_font_family_overrides(families);
+    }
+
+    let content = if clickable.is_empty() {
+        styled.into_any_element()
+    } else {
+        InteractiveText::new(
+            gpui::ElementId::NamedInteger(SharedString::new_static("runs"), node.id),
+            styled,
+        )
+        .on_click(clickable, move |index, _window, _cx| {
+            if let Some(target) = targets.get(index) {
+                // gpui reports which run was clicked and nothing else, so the
+                // span's listener is called without a pointer event.
+                crate::emit_event(*target, "click", Value::Null);
+            }
+        })
+        .into_any_element()
+    };
+
+    finish(shell(node, tree).child(content), node)
 }
 
 /// Reports a key event to every node that registered the matching listener and

@@ -169,21 +169,53 @@ message naming the fix rather than letting it fail silently.
 | Tag | Renders as | Notes |
 | --- | --- | --- |
 | `div` | gpui `div()` | A flex container. The workhorse. |
-| `text` | gpui `div()` | Same element, named for intent. |
+| `text` | gpui `div()` or `StyledText` | Text laid out as one block, so it wraps. |
+| `span` | a run inside `<text>` | Styles or makes clickable part of one string. |
 | `img` | gpui `img()` | Takes `src` — a file path or an `http(s)` URL. |
 | `svg` | gpui `svg()` | Takes `path`; painted in the current text colour. |
 | `anchored` | gpui `anchored()` | A floating layer: popovers, dropdowns, context menus. |
 | `deferred` | gpui `deferred()` | Paints after its siblings, so overlays land on top. |
 | `input` | custom | A single-line text field whose buffer lives in the host. |
 | `uniform-list` | gpui `uniform_list()` | A virtualised list of equal-height rows. |
+| `list` | gpui `list()` | A virtualised list whose rows may each be a different height. |
 
 Every element defaults to `display: flex`, not to gpui's own `display: block`.
 That is what makes `flexDirection`, `alignItems`, `justifyContent` and `gap`
-meaningful on a bare `<div>`; set `display` explicitly to opt out.
+meaningful on a bare `<div>`; set `display` explicitly to opt out. `<text>` is the
+exception and defaults to `display: block`, for the reason in the next section.
 
 Text is written as ordinary JSX children. Adjacent text nodes are concatenated by
 the host, so `<div>#{index() + 1}</div>` lays out as one run of text rather than
 two boxes.
+
+## Text
+
+Long text belongs in `<text>` rather than `<div>`. gpui measures a line of text
+at its full width even when the layout asks how narrow it could be, so as a flex
+item it never shrinks and a long line runs out of its container instead of
+wrapping. `<text>` is laid out as a block, which hands it the container's width
+and lets it wrap inside it.
+
+A `<span>` styles part of that text:
+
+```tsx
+<text>
+  Wraps between <span style={{ color: "#7aa2f7", fontWeight: "bold" }}>two</span>{" "}
+  <span style={{ fontStyle: "italic" }}>differently</span> styled runs, and this one{" "}
+  <span style={{ underline: true }} onClick={openLink}>answers a click</span>.
+</text>
+```
+
+A span is not an element of its own. gpui lays the whole `<text>` out as a single
+string, and a span contributes a range of it — which is what lets a line wrap in
+the middle of a styled run. Only the fields gpui can vary run by run apply:
+`color`, `fontWeight`, `fontStyle`, `fontFamily`, `background`, `underline`,
+`strikethrough` and `fadeOut`. A size or an alignment belongs to the `<text>` as
+a whole and is ignored on a span. `onClick` takes no event, because gpui reports
+which run was clicked and nothing else.
+
+A `<text>` holding anything other than strings and spans falls back to laying its
+children out as boxes.
 
 ## Styling
 
@@ -322,6 +354,45 @@ measures the first row and derives every other row's position from it.
 A virtualised list keeps its own scroll state, so `onScroll` does not apply to it;
 `onRange` is how it reports where the viewport is.
 
+### Rows of differing heights
+
+`<list>` is the same idea for rows that are not all the same height — a chat log,
+a feed, anything whose rows wrap. It is driven the same way, by `count`, `start`
+and `onRange`:
+
+```tsx
+<list count={messages.length} start={window().start} align="bottom" follow="tail"
+      itemHeight={40} onRange={setWindow}>
+  <For each={messages.slice(window().start, window().end)}>
+    {(message) => <text>{message.body}</text>}
+  </For>
+</list>
+```
+
+gpui caches the height of every row it has measured, which is what lets it scroll
+without laying the whole list out — and it is why this element carries state the
+others do not:
+
+- **`itemHeight`** is the height to assume for a row that has not been measured.
+  It matters more than it looks: a row the host has not received yet stands in as
+  a blank of this height, and a stand-in measured at nothing would tell the list
+  that the whole of it fits on screen, which makes it ask for every row at once.
+- **`insertedAt`** says where rows went when `count` grew, so the heights either
+  side of the insertion survive. It defaults to the end — an append. Pass `0`
+  when prepending. A `count` that shrinks re-measures everything, because nothing
+  says which rows went.
+- **`align`** anchors the list to the `"top"` or the `"bottom"`; `"bottom"` suits
+  a chat log. **`follow="tail"`** keeps it at the end as rows arrive, until the
+  user scrolls away. **`overdraw`** is how far beyond the viewport, in pixels,
+  rows are measured so scrolling does not pop. `align`, `overdraw` and
+  `itemHeight` are read once, when the list first renders.
+- **`scrollToItem`** scrolls until that row is fully visible, on change.
+
+Rows are asked for in chunks, and a request for a row far from the ones already
+rendered replaces the standing request rather than widening it — a list anchored
+to its bottom starts laying out from its last row while JavaScript is still
+showing its first, and widening across that gap would ask for the entire list.
+
 ## Drag and drop
 
 ```tsx
@@ -365,7 +436,7 @@ logical pixels, modifiers as booleans.
 | `onFocus`, `onBlur` | Focus entering or leaving a focusable element |
 | `onDragStart`, `onDrop` | A drag beginning here, or released here |
 | `onInput`, `onChange` | Edits to an `<input>` |
-| `onRange` | A `<uniform-list>` asking for rows |
+| `onRange` | A `<uniform-list>` or `<list>` asking for rows |
 
 ```tsx
 <div onClick={(event) => console.log(event.position, event.clickCount)} />
@@ -415,9 +486,9 @@ re-exported from `solid-js`, which is where the JSX transform imports them from.
 
 - **One window per process.** The protocol has a single root.
 - **Single-line text only.** `<input>` has no multi-line mode.
-- **No variable-height virtualisation.** gpui's `list` keeps its own `ListState`
-  and asks for items synchronously, which the protocol cannot answer;
-  `<uniform-list>` covers the equal-height case.
+- **A `<list>` shows blank rows for one frame.** gpui asks for a row while it is
+  laying out and cannot wait for a round trip, so a row outside the rendered
+  window stands in at `itemHeight` until the next frame carries it.
 - **No `canvas` or `surface`.** Both are built on per-frame callbacks — a paint
   closure, a video frame source — that cannot cross a process boundary.
 - **Scrolling reports one frame late.** `onScroll` is emitted from the following

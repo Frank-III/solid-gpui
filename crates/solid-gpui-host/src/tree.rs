@@ -7,11 +7,11 @@
 //! handle, a scroll handle, an input buffer — which are created when the
 //! property that needs them arrives and then kept for the node's lifetime.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 use gpui::{
-    App, AppContext, ElementId, Entity, FocusHandle, ScrollHandle, SharedString,
+    App, AppContext, ElementId, Entity, FocusHandle, ListState, ScrollHandle, SharedString,
     UniformListScrollHandle,
 };
 use serde_json::Value;
@@ -54,6 +54,17 @@ pub struct Node {
     pub scroll: Option<ScrollHandle>,
     /// A virtualised list keeps its own scroll state, of a different type.
     pub list_scroll: Option<UniformListScrollHandle>,
+    /// A `<list>` owns gpui's `ListState`, which caches every row height it has
+    /// measured. It is built on the first render rather than when `count`
+    /// arrives, because the props that configure it — the alignment, the
+    /// overdraw — arrive in the same batch and in no particular order.
+    pub list: RefCell<Option<ListState>>,
+    /// The item count `list` was last told about, so a change can be turned
+    /// into the splice that preserves the heights either side of it.
+    pub list_count: Cell<usize>,
+    /// The row window a `<list>` last built from, so rows that have just
+    /// arrived can be re-measured.
+    pub last_window: Cell<Option<(usize, usize)>>,
     pub input: Option<Entity<InputState>>,
     /// The last row range a virtualised list asked JavaScript for, so the same
     /// request is not sent again on every frame.
@@ -64,6 +75,8 @@ pub struct Node {
     pub last_scroll: Cell<Option<(f32, f32)>>,
     /// The row a virtualised list was last told to scroll to.
     pub last_scroll_to: Cell<Option<usize>>,
+    /// Whether a `<list>` was last set to follow its tail.
+    pub last_follow: Cell<Option<bool>>,
 }
 
 impl Node {
@@ -88,11 +101,15 @@ impl Node {
             focus: None,
             scroll: None,
             list_scroll: None,
+            list: RefCell::new(None),
+            list_count: Cell::new(0),
+            last_window: Cell::new(None),
             input: None,
             last_range: Cell::new(None),
             focused_once: Cell::new(false),
             last_scroll: Cell::new(None),
             last_scroll_to: Cell::new(None),
+            last_follow: Cell::new(None),
         }
     }
 
@@ -123,6 +140,34 @@ impl Node {
 
     pub fn is_focusable(&self) -> bool {
         self.focus.is_some()
+    }
+
+    /// Tells a `<list>`'s state that the item count changed.
+    ///
+    /// Growing the list is reported as an insertion rather than a reset so the
+    /// heights measured either side of it survive: a reset would drop every
+    /// cached height and, with them, the scroll position. Where the items went
+    /// in is the caller's to say — `insertedAt`, defaulting to the end — because
+    /// a count alone cannot distinguish an append from a prepend. Shrinking is
+    /// still a reset; without knowing which rows went, nothing else is safe.
+    pub fn sync_list_count(&self, next: usize) {
+        let state = self.list.borrow().clone();
+        let Some(state) = state else {
+            // Nothing to sync yet: the state is built from the current count.
+            self.list_count.set(next);
+            return;
+        };
+        let previous = self.list_count.get();
+        if next == previous {
+            return;
+        }
+        if next > previous {
+            let at = self.prop_usize("insertedAt").unwrap_or(previous).min(previous);
+            state.splice(at..at, next - previous);
+        } else {
+            state.reset(next);
+        }
+        self.list_count.set(next);
     }
 }
 
@@ -201,8 +246,11 @@ impl Tree {
         // node is mutably borrowed.
         match key {
             "focusable" | "tabIndex" | "autofocus" => self.ensure_focus(id, cx),
+            // A `<list>` scrolls through its own `ListState`, so only the
+            // uniform list needs a handle here.
             "scrollToItem" => {
                 if let Some(node) = self.nodes.get_mut(&id)
+                    && node.tag == "uniform-list"
                     && node.list_scroll.is_none()
                 {
                     node.list_scroll = Some(UniformListScrollHandle::new());
@@ -270,6 +318,9 @@ impl Tree {
                     node.props.remove(key);
                 } else {
                     node.props.insert(key.to_string(), value);
+                }
+                if key == "count" && node.tag == "list" {
+                    node.sync_list_count(node.prop_usize("count").unwrap_or(0));
                 }
             }
         }

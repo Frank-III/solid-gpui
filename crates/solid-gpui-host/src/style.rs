@@ -8,7 +8,7 @@
 use gpui::{
     AbsoluteLength, AlignContent, AlignItems, AlignSelf, BorderStyle, BoxShadow, CursorStyle,
     DefiniteLength, Display, FlexDirection, FlexWrap, FontStyle, FontWeight, GridTemplate,
-    GridTemplateMinSize, Hsla, JustifyContent, Length, Overflow, Position,
+    GridTemplateMinSize, HighlightStyle, Hsla, JustifyContent, Length, Overflow, Position,
     SharedString, StrikethroughStyle, StyleRefinement, TextAlign, TextOverflow, UnderlineStyle,
     Visibility, WhiteSpace, point, px, relative, rems,
 };
@@ -167,6 +167,9 @@ pub struct WireTextStyle {
     pub text_align: Option<String>,
     pub text_overflow: Option<WireTextOverflow>,
     pub line_clamp: Option<usize>,
+    /// Only meaningful on a `<span>`: gpui fades a highlighted run rather than
+    /// a whole block, so there is no matching field on `TextStyle`.
+    pub fade_out: Option<f32>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -353,6 +356,37 @@ fn apply_text(wire: &WireTextStyle, style: &mut StyleRefinement) {
     }
     if let Some(clamp) = wire.line_clamp {
         text.line_clamp = Some(clamp);
+    }
+}
+
+/// The part of a text style gpui can vary from run to run within one piece of
+/// text. Everything else a `WireTextStyle` can carry — the size, the line
+/// height, the alignment — belongs to the block as a whole, and a `<span>`
+/// setting it has no effect.
+pub fn highlight(wire: &WireTextStyle) -> HighlightStyle {
+    HighlightStyle {
+        color: wire.color.map(Into::into),
+        font_weight: wire.font_weight.map(FontWeight),
+        font_style: wire.font_style.as_deref().and_then(|name| match name {
+            "italic" => Some(FontStyle::Italic),
+            "oblique" => Some(FontStyle::Oblique),
+            "normal" => Some(FontStyle::Normal),
+            _ => None,
+        }),
+        background_color: wire.background_color.map(Into::into),
+        underline: wire.underline.as_ref().map(|underline| UnderlineStyle {
+            thickness: px(underline.thickness.unwrap_or(1.)),
+            color: underline.color.map(Into::into),
+            wavy: underline.wavy.unwrap_or(false),
+        }),
+        strikethrough: wire
+            .strikethrough
+            .as_ref()
+            .map(|strikethrough| StrikethroughStyle {
+                thickness: px(strikethrough.thickness.unwrap_or(1.)),
+                color: strikethrough.color.map(Into::into),
+            }),
+        fade_out: wire.fade_out,
     }
 }
 

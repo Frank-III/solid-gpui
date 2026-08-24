@@ -143,6 +143,38 @@ export interface InputProps extends Omit<ElementProps, "children"> {
   onChange?: (event: InputEvent) => void;
 }
 
+export interface ListProps extends ElementProps {
+  /** Total number of rows, including the ones not rendered. */
+  count: number;
+  /** Absolute index of the first child. */
+  start?: number;
+  /**
+   * Where rows were added when `count` grew, so the heights measured either
+   * side of the insertion survive it. Defaults to the end of the list — an
+   * append. Pass `0` when prepending, or the list will re-measure from the
+   * wrong place. A `count` that shrinks always re-measures everything.
+   */
+  insertedAt?: number;
+  /** Which end the list is anchored to. `"bottom"` suits a chat log. */
+  align?: "top" | "bottom";
+  /**
+   * How far beyond the viewport, in pixels, rows are measured so scrolling does
+   * not pop. Read once, when the list first renders.
+   */
+  overdraw?: number;
+  /**
+   * A starting height for rows not yet measured, so the scrollbar is the right
+   * size on the first frame. Read once, when the list first renders.
+   */
+  itemHeight?: number;
+  /** `"tail"` keeps the list at the end as rows arrive, until scrolled away. */
+  follow?: "normal" | "tail";
+  /** Asks for the rows the viewport needs; render them and update `start`. */
+  onRange?: (event: RangeEvent) => void;
+  /** Scrolls until this row is fully visible. */
+  scrollToItem?: number;
+}
+
 export interface UniformListProps extends ElementProps {
   /** Total number of rows, including the ones not rendered. */
   count: number;
@@ -152,6 +184,27 @@ export interface UniformListProps extends ElementProps {
   onRange?: (event: RangeEvent) => void;
   /** Scrolls this row to the top of the viewport. */
   scrollToItem?: number;
+}
+
+/**
+ * A run of text inside a `<text>`.
+ *
+ * A span is not an element: gpui lays a `<text>` out as one string, and a span
+ * contributes a range of it. That is what lets a line wrap in the middle of a
+ * styled run. Only the style fields gpui can vary run by run apply — the
+ * colour, the weight, the slant, the background, the underline, the
+ * strikethrough, the family and `fadeOut`. A size or an alignment belongs to
+ * the `<text>` as a whole and is ignored here.
+ */
+export interface SpanProps {
+  style?: GpuiStyle;
+  /**
+   * Called when the run is clicked. gpui reports which run was hit and nothing
+   * else, so there is no pointer event to hand over.
+   */
+  onClick?: () => void;
+  ref?: GpuiNode | ((element: GpuiNode) => void);
+  children?: string | number | GpuiChild;
 }
 
 /**
@@ -191,8 +244,14 @@ export namespace JSX {
   export interface IntrinsicElements {
     /** A flexbox container, the direct equivalent of gpui's `div()`. */
     div: ElementProps;
-    /** A container whose children are laid out as inline text. */
+    /**
+     * A container whose children are laid out as inline text. Holding only
+     * strings and `<span>`s makes it one styled string, which can wrap between
+     * two runs; anything else falls back to laying the children out as boxes.
+     */
     text: ElementProps;
+    /** A styled, optionally clickable run of text inside a `<text>`. */
+    span: SpanProps;
     img: ImageProps;
     svg: SvgProps;
     /** A floating layer, for popovers, dropdowns and context menus. */
@@ -203,5 +262,7 @@ export namespace JSX {
     input: InputProps;
     /** A virtualised list of equal-height rows. */
     "uniform-list": UniformListProps;
+    /** A virtualised list whose rows may each be a different height. */
+    list: ListProps;
   }
 }

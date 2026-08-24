@@ -212,13 +212,25 @@ describe("newer elements", () => {
         </deferred>
         <input value="hello" placeholder="type" />
         <uniform-list count={1000} start={0} />
+        <list count={1000} start={0} />
+        <text>
+          plain <span style={{ color: "#f00" }}>red</span>
+        </text>
       </div>
     ));
     const tags = host.operations
       .filter((operation) => operation[0] === Op.CreateElement)
       .map((operation) => operation[2]);
     expect(tags).toEqual(
-      expect.arrayContaining(["anchored", "deferred", "input", "uniform-list"]),
+      expect.arrayContaining([
+        "anchored",
+        "deferred",
+        "input",
+        "uniform-list",
+        "list",
+        "text",
+        "span",
+      ]),
     );
   });
 
@@ -229,6 +241,16 @@ describe("newer elements", () => {
         <deferred priority={3} />
         <input value="hi" placeholder="type here" />
         <uniform-list count={500} start={40} scrollToItem={120} onRange={() => {}} />
+        <list
+          count={300}
+          start={20}
+          insertedAt={0}
+          align="bottom"
+          overdraw={128}
+          itemHeight={24}
+          follow="tail"
+          onRange={() => {}}
+        />
       </div>
     ));
     expect(created(host, "anchored")?.[3]).toMatchObject({
@@ -245,6 +267,57 @@ describe("newer elements", () => {
       scrollToItem: 120,
       "@range": true,
     });
+    expect(created(host, "list")?.[3]).toMatchObject({
+      count: 300,
+      start: 20,
+      insertedAt: 0,
+      align: "bottom",
+      overdraw: 128,
+      itemHeight: 24,
+      follow: "tail",
+      "@range": true,
+    });
+  });
+
+  it("gives a span the text style fields a run can vary", async () => {
+    const host = await mount(() => (
+      <text>
+        before
+        <span
+          style={{ color: "#ff0000", fontWeight: "bold", underline: true, fadeOut: 0.5 }}
+          onClick={() => {}}
+        >
+          link
+        </span>
+      </text>
+    ));
+    expect(created(host, "span")?.[3]).toMatchObject({
+      style: {
+        text: {
+          color: { h: 0, s: 1, l: 0.5, a: 1 },
+          font_weight: 700,
+          underline: {},
+          fade_out: 0.5,
+        },
+      },
+      "@click": true,
+    });
+  });
+
+  it("re-renders a list's rows when the window moves", async () => {
+    const [start, setStart] = createSignal(0);
+    const host = await mount(() => (
+      <list count={100} start={start()}>
+        <For each={[0, 1, 2]}>{(offset) => <div>{String(start() + offset)}</div>}</For>
+      </list>
+    ));
+    setStart(40);
+    flush();
+    await tick();
+    const updates = host.operations.filter(
+      (operation) => operation[0] === Op.SetProp && operation[2] === "start",
+    );
+    expect(updates.at(-1)?.[3]).toBe(40);
   });
 
   it("sends an animation with both endpoints normalised", async () => {

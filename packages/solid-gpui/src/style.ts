@@ -51,6 +51,7 @@ export interface WireTextStyle {
   text_align?: string;
   text_overflow?: { kind: string; ellipsis: string } | null;
   line_clamp?: number;
+  fade_out?: number;
 }
 
 export interface WireGridTemplate {
@@ -234,6 +235,11 @@ export interface GpuiStyle {
   strikethrough?: boolean | { color?: ColorInput; thickness?: number };
   textOverflow?: "clip" | "ellipsis" | "ellipsis-start" | "ellipsis-middle";
   lineClamp?: number;
+  /**
+   * Fades the text towards its background, between 0 and 1. Only a `<span>`
+   * honours it: gpui applies it to a run of text rather than to a block.
+   */
+  fadeOut?: number;
 }
 
 const FONT_WEIGHTS: Record<FontWeightName, number> = {
@@ -371,6 +377,7 @@ export function normalizeStyle(input: GpuiStyle | null | undefined): WireStyle |
   if (input.textAlign !== undefined) text(out).text_align = input.textAlign;
   if (input.whiteSpace !== undefined) text(out).white_space = input.whiteSpace;
   if (input.lineClamp !== undefined) text(out).line_clamp = input.lineClamp;
+  if (input.fadeOut !== undefined) text(out).fade_out = input.fadeOut;
 
   if (input.underline !== undefined) {
     text(out).underline =

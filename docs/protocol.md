@@ -41,6 +41,11 @@ and colours are HSLA with every channel in 0..1. Shorthand expansion, unit
 parsing and colour parsing all happen in JavaScript so the host is a mechanical
 field-by-field assignment.
 
+A `<span>` inside a `<text>` is an ordinary element on the wire — it carries a
+`style` like any other, and the host reads the text fields out of it to build one
+run of the surrounding string. Its `click` listener is reported with a `null`
+payload, since gpui says which run was clicked and nothing more.
+
 A prop whose value is an element — a tooltip written as JSX — is sent as
 `{"__node": id}`. The node it names is created like any other but never inserted
 into the tree, and the sender pins it so the collector described below leaves it
@@ -50,7 +55,9 @@ alone; the host builds it on demand.
 `from` and `to` are style objects in the same normalised form.
 
 Remaining properties are element-specific: `src` on `img`, `path` on `svg`,
-`count`, `start` and `scrollToItem` on `uniform-list`, `value` and `placeholder` on `input`,
+`count`, `start` and `scrollToItem` on `uniform-list`, the same plus
+`insertedAt`, `align`, `overdraw`, `itemHeight` and `follow` on `list`,
+`value` and `placeholder` on `input`,
 `anchor`/`position`/`offset`/`snapToWindow` on `anchored`, `priority` on
 `deferred`, and `group`, `groupOf`, `tooltip`, `dragData`, `focusable`,
 `tabIndex`, `autofocus`, `occlude`, `scrollTop` and `scrollLeft` on any element.
@@ -72,7 +79,9 @@ booleans. Events whose payload is a bare value — `hover` — wrap it as
 
 Two events are requests rather than notifications. `range` asks for the rows a
 virtualised list needs, and is emitted while gpui is laying out, so the answer
-arrives a frame later. `input` reports an edit the host has already applied to
+arrives a frame later. A `list` asks in chunks of sixteen rows, and a request far
+from the standing one replaces it rather than widening it, so a list anchored to
+its bottom does not end up asking for every row between the two. `input` reports an edit the host has already applied to
 its own buffer, which is why a `value` prop that echoes it does not fight the
 caret.
 

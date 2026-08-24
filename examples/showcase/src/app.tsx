@@ -39,16 +39,34 @@ const ROW_HEIGHT = 24;
 const TOTAL_ROWS = 5000;
 const OVERSCAN = 20;
 
+const WORDS = [
+  "gpui paints this from Rust",
+  "a row here is as tall as its text, so the list has to measure each one",
+  "short",
+  "solid reconciles the tree and only the rows in view are ever built, which is what keeps a list of five thousand affordable even when every row wraps to a different height",
+  "another line",
+];
+
+/** Deterministic filler, so a reload shows the same list. */
+const messages = Array.from({ length: 2000 }, (_, index) => ({
+  index,
+  who: index % 3 === 0 ? "them" : "you",
+  body: WORDS[index % WORDS.length]!,
+}));
+
 function App() {
   const [name, setName] = createSignal("");
   const [focused, setFocused] = createSignal(false);
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [dropped, setDropped] = createSignal<string | null>(null);
   const [range, setRange] = createSignal({ start: 0, end: 40 });
+  const [chat, setChat] = createSignal({ start: 0, end: 20 });
 
   const first = () => Math.max(0, range().start - OVERSCAN);
   const last = () => Math.min(TOTAL_ROWS, range().end + OVERSCAN);
   const rows = () => Array.from({ length: last() - first() }, (_, index) => first() + index);
+
+  const chatRows = () => messages.slice(chat().start, chat().end);
 
   return (
     <div
@@ -197,6 +215,60 @@ function App() {
             rendered {first()}–{last()} · viewport {range().start}–{range().end}
           </div>
         </div>
+
+        <div style={{ ...panel, flexGrow: 1, minWidth: 260 }}>
+          <div style={heading}>RICH TEXT</div>
+          <text style={{ lineHeight: 20 }}>
+            One string, laid out once, so a line can wrap between{" "}
+            <span style={{ color: palette.accent, fontWeight: "semibold" }}>two</span>{" "}
+            <span style={{ color: palette.good, fontStyle: "italic" }}>differently</span>{" "}
+            styled runs. This one{" "}
+            <span
+              style={{ color: palette.accent, underline: true, cursor: "pointer" }}
+              onClick={() => setDropped("the link was clicked")}
+            >
+              answers a click
+            </span>
+            , and this one{" "}
+            <span style={{ fadeOut: 0.6 }}>fades into the background</span>.
+          </text>
+
+          <div style={heading}>VARIABLE-HEIGHT LIST — {messages.length} ROWS</div>
+          <list
+            count={messages.length}
+            start={chat().start}
+            align="bottom"
+            follow="tail"
+            itemHeight={40}
+            onRange={(event) => setChat(event)}
+            style={{ flexGrow: 1, borderRadius: 6, background: palette.background }}
+          >
+            <For each={chatRows()}>
+              {(message) => (
+                <div
+                  style={{
+                    flexDirection: "column",
+                    gap: 2,
+                    paddingX: 8,
+                    paddingY: 6,
+                    borderBottomWidth: 1,
+                    borderColor: palette.border,
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: palette.muted }}>
+                    #{message.index} · {message.who}
+                  </div>
+                  <text style={{ color: message.who === "you" ? palette.text : palette.muted }}>
+                    {message.body}
+                  </text>
+                </div>
+              )}
+            </For>
+          </list>
+          <div style={{ color: palette.muted, fontSize: 12 }}>
+            rendered {chat().start}–{chat().end}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -204,6 +276,6 @@ function App() {
 
 await render(() => <App />, {
   title: "solid-gpui showcase",
-  width: 820,
-  height: 620,
+  width: 1180,
+  height: 640,
 });
