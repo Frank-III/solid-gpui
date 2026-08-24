@@ -587,3 +587,141 @@ pub fn apply(wire: &WireStyle, style: &mut StyleRefinement) {
         apply_text(text, style);
     }
 }
+
+/// A style-to-style animation, interpolated by the host.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WireAnimation {
+    pub duration_ms: f32,
+    pub from: WireStyle,
+    pub to: WireStyle,
+    pub repeat: bool,
+    pub easing: String,
+    pub max_fps: Option<f32>,
+}
+
+fn lerp_f32(from: f32, to: f32, t: f32) -> f32 {
+    from + (to - from) * t
+}
+
+fn lerp_opt_f32(from: Option<f32>, to: Option<f32>, t: f32) -> Option<f32> {
+    match (from, to) {
+        (Some(from), Some(to)) => Some(lerp_f32(from, to, t)),
+        (from, to) => to.or(from),
+    }
+}
+
+/// Lengths interpolate only when both sides use the same unit; mixing pixels
+/// with a percentage has no meaningful midpoint without knowing the container.
+fn lerp_len(from: Option<WireLength>, to: Option<WireLength>, t: f32) -> Option<WireLength> {
+    match (from, to) {
+        (Some(WireLength::Pixels(a)), Some(WireLength::Pixels(b))) => {
+            Some(WireLength::Pixels(lerp_f32(a, b, t)))
+        }
+        (Some(WireLength::Rems(a)), Some(WireLength::Rems(b))) => {
+            Some(WireLength::Rems(lerp_f32(a, b, t)))
+        }
+        (Some(WireLength::Fraction(a)), Some(WireLength::Fraction(b))) => {
+            Some(WireLength::Fraction(lerp_f32(a, b, t)))
+        }
+        (from, to) => to.or(from),
+    }
+}
+
+fn lerp_color(from: Option<WireColor>, to: Option<WireColor>, t: f32) -> Option<WireColor> {
+    match (from, to) {
+        (Some(a), Some(b)) => Some(WireColor {
+            h: lerp_f32(a.h, b.h, t),
+            s: lerp_f32(a.s, b.s, t),
+            l: lerp_f32(a.l, b.l, t),
+            a: lerp_f32(a.a, b.a, t),
+        }),
+        (from, to) => to.or(from),
+    }
+}
+
+fn lerp_edges(from: &Option<WireEdges>, to: &Option<WireEdges>, t: f32) -> Option<WireEdges> {
+    if from.is_none() && to.is_none() {
+        return None;
+    }
+    let a = from.clone().unwrap_or_default();
+    let b = to.clone().unwrap_or_default();
+    Some(WireEdges {
+        top: lerp_len(a.top, b.top, t),
+        right: lerp_len(a.right, b.right, t),
+        bottom: lerp_len(a.bottom, b.bottom, t),
+        left: lerp_len(a.left, b.left, t),
+    })
+}
+
+fn lerp_size(from: &Option<WireSize>, to: &Option<WireSize>, t: f32) -> Option<WireSize> {
+    if from.is_none() && to.is_none() {
+        return None;
+    }
+    let a = from.clone().unwrap_or_default();
+    let b = to.clone().unwrap_or_default();
+    Some(WireSize {
+        width: lerp_len(a.width, b.width, t),
+        height: lerp_len(a.height, b.height, t),
+    })
+}
+
+fn lerp_corners(from: &Option<WireCorners>, to: &Option<WireCorners>, t: f32) -> Option<WireCorners> {
+    if from.is_none() && to.is_none() {
+        return None;
+    }
+    let a = from.clone().unwrap_or_default();
+    let b = to.clone().unwrap_or_default();
+    Some(WireCorners {
+        top_left: lerp_len(a.top_left, b.top_left, t),
+        top_right: lerp_len(a.top_right, b.top_right, t),
+        bottom_left: lerp_len(a.bottom_left, b.bottom_left, t),
+        bottom_right: lerp_len(a.bottom_right, b.bottom_right, t),
+    })
+}
+
+fn lerp_text(
+    from: &Option<WireTextStyle>,
+    to: &Option<WireTextStyle>,
+    t: f32,
+) -> Option<WireTextStyle> {
+    if from.is_none() && to.is_none() {
+        return None;
+    }
+    let a = from.clone().unwrap_or_default();
+    let b = to.clone().unwrap_or_default();
+    Some(WireTextStyle {
+        color: lerp_color(a.color, b.color, t),
+        font_size: lerp_len(a.font_size, b.font_size, t),
+        line_height: lerp_len(a.line_height, b.line_height, t),
+        font_weight: lerp_opt_f32(a.font_weight, b.font_weight, t),
+        ..b
+    })
+}
+
+/// Interpolates between two styles at `t` in 0..1.
+///
+/// Properties that cannot be meaningfully interpolated — a display mode, a flex
+/// direction — take the destination's value, which makes them a step at the
+/// start of the animation rather than something that flickers halfway through.
+pub fn lerp(from: &WireStyle, to: &WireStyle, t: f32) -> WireStyle {
+    WireStyle {
+        inset: lerp_edges(&from.inset, &to.inset, t),
+        size: lerp_size(&from.size, &to.size, t),
+        min_size: lerp_size(&from.min_size, &to.min_size, t),
+        max_size: lerp_size(&from.max_size, &to.max_size, t),
+        aspect_ratio: lerp_opt_f32(from.aspect_ratio, to.aspect_ratio, t),
+        margin: lerp_edges(&from.margin, &to.margin, t),
+        padding: lerp_edges(&from.padding, &to.padding, t),
+        border_widths: lerp_edges(&from.border_widths, &to.border_widths, t),
+        gap: lerp_size(&from.gap, &to.gap, t),
+        flex_basis: lerp_len(from.flex_basis, to.flex_basis, t),
+        flex_grow: lerp_opt_f32(from.flex_grow, to.flex_grow, t),
+        flex_shrink: lerp_opt_f32(from.flex_shrink, to.flex_shrink, t),
+        background: lerp_color(from.background, to.background, t),
+        border_color: lerp_color(from.border_color, to.border_color, t),
+        corner_radii: lerp_corners(&from.corner_radii, &to.corner_radii, t),
+        opacity: lerp_opt_f32(from.opacity, to.opacity, t),
+        text: lerp_text(&from.text, &to.text, t),
+        ..to.clone()
+    }
+}

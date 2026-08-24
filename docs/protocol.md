@@ -41,8 +41,19 @@ and colours are HSLA with every channel in 0..1. Shorthand expansion, unit
 parsing and colour parsing all happen in JavaScript so the host is a mechanical
 field-by-field assignment.
 
+A prop whose value is an element — a tooltip written as JSX — is sent as
+`{"__node": id}`. The node it names is created like any other but never inserted
+into the tree, and the sender pins it so the collector described below leaves it
+alone; the host builds it on demand.
+
+`animate` carries `{duration_ms, from, to, repeat, easing, max_fps}`, where
+`from` and `to` are style objects in the same normalised form.
+
 Remaining properties are element-specific: `src` on `img`, `path` on `svg`,
-`group`, `groupOf` and `tooltip` on any element.
+`count` and `start` on `uniform-list`, `value` and `placeholder` on `input`,
+`anchor`/`position`/`offset`/`snapToWindow` on `anchored`, `priority` on
+`deferred`, and `group`, `groupOf`, `tooltip`, `dragData`, `focusable`,
+`tabIndex`, `autofocus`, `occlude`, `scrollTop` and `scrollLeft` on any element.
 
 ## Messages (host → JavaScript)
 
@@ -57,7 +68,13 @@ Remaining properties are element-specific: `src` on `img`, `path` on `svg`,
 Event names drop the `on` prefix and lower-case the first letter, so `onKeyDown`
 arrives as `keyDown`. Payloads carry positions in logical pixels and modifiers as
 booleans. Events whose payload is a bare value — `hover` — wrap it as
-`{"value": …}`.
+`{"value": …}`, and events that carry nothing — `focus`, `blur` — send `null`.
+
+Two events are requests rather than notifications. `range` asks for the rows a
+virtualised list needs, and is emitted while gpui is laying out, so the answer
+arrives a frame later. `input` reports an edit the host has already applied to
+its own buffer, which is why a `value` prop that echoes it does not fight the
+caret.
 
 ## Batching and lifetime
 

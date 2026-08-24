@@ -43,6 +43,11 @@ export type {
   ElementProps,
   ImageProps,
   SvgProps,
+  AnchoredProps,
+  AnchorPoint,
+  DeferredProps,
+  InputProps,
+  UniformListProps,
   GpuiChild,
   GpuiChildArray,
   GpuiRenderedElement,
@@ -55,8 +60,8 @@ export { hsla, rgb, rgba, toColor } from "./color.js";
 export type { ColorInput, Hsla } from "./color.js";
 export { auto, px, relative, rems, toLength } from "./length.js";
 export type { LengthInput } from "./length.js";
-export { normalizeStyle } from "./style.js";
-export type { GpuiStyle, ShadowInput, Cursor } from "./style.js";
+export { normalizeStyle, normalizeAnimation } from "./style.js";
+export type { GpuiStyle, ShadowInput, Cursor, AnimationSpec, Easing } from "./style.js";
 
 export interface RenderOptions extends Omit<SessionOptions, "window">, WindowOptions {}
 

@@ -8,13 +8,34 @@
  */
 
 import { createRenderer } from "@solidjs/universal";
-import { ELEMENT, TEXT, createNode, isText, linkNode, unlinkNode, type GpuiNode } from "./node.js";
+import {
+  ELEMENT,
+  TEXT,
+  createNode,
+  isNode,
+  isText,
+  linkNode,
+  unlinkNode,
+  type GpuiNode,
+} from "./node.js";
 import { session } from "./session.js";
 import { Op } from "./protocol.js";
 import { eventNameFromProp } from "./events.js";
-import { normalizeStyle, type GpuiStyle } from "./style.js";
+import {
+  normalizeAnimation,
+  normalizeStyle,
+  type AnimationSpec,
+  type GpuiStyle,
+} from "./style.js";
 
-const STYLE_PROPS = new Set(["style", "hoverStyle", "activeStyle", "groupHoverStyle"]);
+const STYLE_PROPS = new Set([
+  "style",
+  "hoverStyle",
+  "activeStyle",
+  "groupHoverStyle",
+  "groupActiveStyle",
+  "dragOverStyle",
+]);
 
 function wireValue(node: GpuiNode, name: string, value: unknown): unknown {
   const eventName = eventNameFromProp(name);
@@ -27,6 +48,13 @@ function wireValue(node: GpuiNode, name: string, value: unknown): unknown {
     return null;
   }
   if (STYLE_PROPS.has(name)) return normalizeStyle(value as GpuiStyle | null | undefined);
+  if (name === "animate") return normalizeAnimation(value as AnimationSpec | null | undefined);
+  // A prop can hold an element — a tooltip written as JSX. It never joins the
+  // tree, so it is referenced by id and pinned so the collector leaves it alone.
+  if (isNode(value)) {
+    session.markAttached(value);
+    return { __node: value.id };
+  }
   return value === undefined ? null : value;
 }
 
@@ -36,8 +64,11 @@ function wireName(name: string): string {
   return eventName ? `@${eventName}` : name;
 }
 
-function setProperty(node: GpuiNode, name: string, value: unknown): void {
+function setProperty(node: GpuiNode, name: string, value: unknown, prev?: unknown): void {
   if (name === "children" || name === "ref") return;
+  // An element-valued prop that is being replaced loses its pin, so the node it
+  // pointed at can be collected with everything else.
+  if (isNode(prev) && prev !== value) session.markDetached(prev);
   const key = wireName(name);
   const next = wireValue(node, name, value);
   const previous = node.props.get(key);
@@ -99,8 +130,8 @@ export const {
 
   isTextNode: isText,
 
-  setProperty(node, name, value) {
-    setProperty(node, name, value);
+  setProperty(node, name, value, prev) {
+    setProperty(node, name, value, prev);
   },
 
   insertNode(parent, node, anchor) {

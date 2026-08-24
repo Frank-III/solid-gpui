@@ -172,6 +172,10 @@ message naming the fix rather than letting it fail silently.
 | `text` | gpui `div()` | Same element, named for intent. |
 | `img` | gpui `img()` | Takes `src` — a file path or an `http(s)` URL. |
 | `svg` | gpui `svg()` | Takes `path`; painted in the current text colour. |
+| `anchored` | gpui `anchored()` | A floating layer: popovers, dropdowns, context menus. |
+| `deferred` | gpui `deferred()` | Paints after its siblings, so overlays land on top. |
+| `input` | custom | A single-line text field whose buffer lives in the host. |
+| `uniform-list` | gpui `uniform_list()` | A virtualised list of equal-height rows. |
 
 Every element defaults to `display: flex`, not to gpui's own `display: block`.
 That is what makes `flexDirection`, `alignItems`, `justifyContent` and `gap`
@@ -224,13 +228,137 @@ and land on gpui's `StyleRefinement` unchanged.
   inherited by its children, the same way gpui does it.
 
 `group` names an element, and a descendant with `groupOf="name"` plus
-`groupHoverStyle` restyles when that ancestor is hovered.
+`groupHoverStyle` or `groupActiveStyle` restyles when that ancestor is hovered or
+pressed. `dragOverStyle` applies while a drag is held over the element, and
+`occlude` stops the mouse reaching whatever is painted underneath.
+
+## Animation
+
+`animate` interpolates between two style objects. The host runs the interpolation
+itself — a per-frame callback into JavaScript would put a process boundary inside
+the animation loop — so it stays smooth regardless of what the application is
+doing.
+
+```tsx
+<div
+  animate={{
+    duration: 900,
+    repeat: true,
+    easing: "bounce",
+    from: { opacity: 0.25, background: "#7aa2f7" },
+    to: { opacity: 1, background: "#9ece6a" },
+  }}
+/>
+```
+
+Easings are `linear`, `quadratic`, `ease-in-out` (the default), `ease-out-quint`
+and `bounce`. Lengths interpolate only when both endpoints use the same unit —
+pixels with pixels, percentages with percentages — since there is no meaningful
+midpoint between `10px` and `50%`. Anything that cannot be interpolated, such as
+a flex direction, steps to the destination at the start.
+
+## Focus and keyboard
+
+An element with `focusable`, `tabIndex` or `autofocus` gets its own focus handle.
+That changes how its key events behave: `onKeyDown` and `onKeyUp` on a focusable
+element fire only while it holds focus, which is what gpui does natively. On an
+element that is *not* focusable they fall back to the window, where every such
+listener hears every keystroke — filter on `event.key` yourself.
+
+`tabIndex` also puts the element in the tab order. `onFocus` and `onBlur` report
+the change.
+
+## Text input
+
+```tsx
+const [name, setName] = createSignal("");
+
+<input
+  autofocus
+  value={name()}
+  placeholder="type your name"
+  onInput={(event) => setName(event.value)}
+  onChange={(event) => save(event.value)}
+/>
+```
+
+The buffer, selection, caret and input-method composition all live in the host.
+They have to: the platform asks for the selected range and the text around the
+cursor synchronously while composing, and those questions cannot wait for a round
+trip. `value` sets the text, `onInput` fires on every edit, and `onChange` fires
+once when focus leaves after an edit. Selection offsets are UTF-16 code units, as
+the platform reports them.
+
+Editing keys — arrows, shift-arrows, home, end, backspace, delete, select-all,
+cut, copy, paste — are bound by the host.
+
+## Virtualised lists
+
+```tsx
+const [range, setRange] = createSignal({ start: 0, end: 40 });
+const first = () => Math.max(0, range().start - 20);
+const last = () => Math.min(total, range().end + 20);
+
+<uniform-list count={total} start={first()} onRange={setRange}>
+  <For each={rows(first(), last())}>{(row) => <div style={{ height: 24 }}>{row}</div>}</For>
+</uniform-list>
+```
+
+`count` is the full row count; the children are the rows that are actually
+rendered, and `start` says which absolute index the first child is.
+
+`onRange` asks for the rows the viewport needs. There is one wrinkle worth knowing:
+gpui asks for a range **during layout**, and the answer cannot wait for a round
+trip to JavaScript. The host renders whatever rows it already has and forwards
+the request, so the next frame carries the rest — a fast scroll shows one frame of
+catch-up. Rendering a margin around the visible range, as above, hides it.
+
+Rows must be the same height; that is what makes the list virtualisable.
+
+## Drag and drop
+
+```tsx
+<div dragData={{ id: item.id }}>drag me</div>
+
+<div dragOverStyle={{ borderColor: "#7aa2f7" }} onDrop={(event) => move(event.data)}>
+  drop here
+</div>
+```
+
+`dragData` is any JSON value. The drag preview is the source element itself.
+`onDrop` receives the data and the source node's id; `onDragStart` fires when the
+drag begins.
+
+## Tooltips
+
+`tooltip` takes either a string or an element:
+
+```tsx
+<div tooltip="Plain text" />
+<div tooltip={<div style={{ padding: 8 }}>Anything you can render</div>} />
+```
+
+An element-valued prop never joins the tree — it is referenced by id and built
+when the tooltip is first shown.
 
 ## Events
 
-Listeners are `on`-prefixed props: `onClick`, `onMouseDown`, `onMouseUp`,
-`onMouseMove`, `onMouseExit`, `onScrollWheel`, `onHover`, `onKeyDown`, `onKeyUp`.
-Each receives a plain object — positions in logical pixels, modifiers as booleans.
+Listeners are `on`-prefixed props. Each receives a plain object — positions in
+logical pixels, modifiers as booleans.
+
+| Listener | Fires on |
+| --- | --- |
+| `onClick`, `onAuxClick` | A completed click, primary or secondary |
+| `onMouseDown`, `onMouseUp`, `onMouseMove`, `onMouseExit` | Raw pointer movement |
+| `onHover` | Receives `true` on enter, `false` on leave |
+| `onScrollWheel` | Wheel and trackpad scrolling, before it is applied |
+| `onScroll` | The scroll offset of a `overflow: "scroll"` element changed |
+| `onMousePressure`, `onPinch` | Trackpad force click and pinch |
+| `onKeyDown`, `onKeyUp` | Keystrokes; scoped to focus on a focusable element |
+| `onFocus`, `onBlur` | Focus entering or leaving a focusable element |
+| `onDragStart`, `onDrop` | A drag beginning here, or released here |
+| `onInput`, `onChange` | Edits to an `<input>` |
+| `onRange` | A `<uniform-list>` asking for rows |
 
 ```tsx
 <div onClick={(event) => console.log(event.position, event.clickCount)} />
@@ -278,13 +406,15 @@ re-exported from `solid-js`, which is where the JSX transform imports them from.
 
 ## Current limitations
 
-- **No text input.** gpui's text editing goes through `EntityInputHandler`, which
-  has no representation in the protocol yet.
-- **Window-level keyboard only**, as described above.
 - **One window per process.** The protocol has a single root.
-- **No virtualised lists.** gpui's `uniform_list` and `list` are not exposed, so
-  very long lists build a full element tree.
-- **No animations or drag and drop.**
+- **Single-line text only.** `<input>` has no multi-line mode.
+- **No variable-height virtualisation.** gpui's `list` keeps its own `ListState`
+  and asks for items synchronously, which the protocol cannot answer;
+  `<uniform-list>` covers the equal-height case.
+- **No `canvas` or `surface`.** Both are built on per-frame callbacks — a paint
+  closure, a video frame source — that cannot cross a process boundary.
+- **Scrolling reports one frame late.** `onScroll` is emitted from the following
+  render, since the offset is only known after gpui applies it.
 
 ## Licence
 

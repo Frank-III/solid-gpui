@@ -10,7 +10,11 @@
 export const ELEMENT = 0;
 export const TEXT = 1;
 
+/** Brand used to tell a node from an ordinary prop value. */
+export const NODE_BRAND = Symbol.for("solid-gpui.node");
+
 export interface GpuiNode {
+  readonly [NODE_BRAND]: true;
   readonly id: number;
   readonly kind: typeof ELEMENT | typeof TEXT;
   /** Element tag; empty for text nodes. */
@@ -29,6 +33,7 @@ let nextId = 1;
 
 export function createNode(kind: typeof ELEMENT | typeof TEXT, tag: string, text: string): GpuiNode {
   return {
+    [NODE_BRAND]: true,
     id: nextId++,
     kind,
     tag,
@@ -42,6 +47,14 @@ export function createNode(kind: typeof ELEMENT | typeof TEXT, tag: string, text
 
 export function isText(node: GpuiNode): boolean {
   return node.kind === TEXT;
+}
+
+/**
+ * Element-valued props — a tooltip written as JSX, for instance — arrive here as
+ * nodes rather than plain data, and have to be told apart from them.
+ */
+export function isNode(value: unknown): value is GpuiNode {
+  return typeof value === "object" && value !== null && NODE_BRAND in value;
 }
 
 /**

@@ -31,6 +31,25 @@ importers:
         specifier: ^8.2.2
         version: 8.2.2(@types/node@22.20.1)
 
+  examples/showcase:
+    dependencies:
+      solid-gpui:
+        specifier: workspace:*
+        version: link:../../packages/solid-gpui
+      solid-js:
+        specifier: 2.0.0-rc.1
+        version: 2.0.0-rc.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vite:
+        specifier: ^8.2.2
+        version: 8.2.2(@types/node@22.20.1)
+
   packages/solid-gpui:
     dependencies:
       '@dom-expressions/compiler':

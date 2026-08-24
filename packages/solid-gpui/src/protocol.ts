@@ -80,8 +80,8 @@ export interface HostEventMessage {
   id: number;
   /** Listener name without the `on` prefix, lower camel case: `click`, `keyDown`. */
   n: string;
-  /** Event payload; shape depends on `n`. */
-  d: Record<string, unknown>;
+  /** Event payload; shape depends on `n`, and may be absent entirely. */
+  d: unknown;
 }
 
 export type HostMessage =

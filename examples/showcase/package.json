@@ -1,0 +1,21 @@
+{
+  "name": "@solid-gpui/example-showcase",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "start": "vite build && node dist/app.js",
+    "trace": "vite build && SOLID_GPUI_HOST=../../tools/mock-host.mjs SOLID_GPUI_MOCK_DUMP=1 node dist/app.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "solid-gpui": "workspace:*",
+    "solid-js": "2.0.0-rc.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.2"
+  }
+}

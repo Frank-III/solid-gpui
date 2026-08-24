@@ -9,7 +9,8 @@
     "test": "pnpm --filter solid-gpui test",
     "typecheck": "pnpm -r typecheck",
     "example:counter": "pnpm --filter @solid-gpui/example-counter start",
-    "example:trace": "pnpm --filter @solid-gpui/example-counter trace"
+    "example:trace": "pnpm --filter @solid-gpui/example-counter trace",
+    "example:showcase": "pnpm --filter @solid-gpui/example-showcase start"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

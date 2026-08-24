@@ -405,6 +405,50 @@ export function normalizeStyle(input: GpuiStyle | null | undefined): WireStyle |
   return out;
 }
 
+export type Easing = "linear" | "quadratic" | "ease-in-out" | "ease-out-quint" | "bounce";
+
+/**
+ * A style-to-style animation. The host interpolates between `from` and `to`
+ * itself — a per-frame callback into JavaScript could not keep up with a
+ * repaint, and would put a process boundary inside the animation loop.
+ *
+ * Only properties present in both `from` and `to`, and expressed in the same
+ * unit, are interpolated; anything else is applied as a step at the start.
+ */
+export interface AnimationSpec {
+  /** Milliseconds for one pass. */
+  duration: number;
+  from: GpuiStyle;
+  to: GpuiStyle;
+  /** Restarts forever rather than holding the final frame. */
+  repeat?: boolean;
+  easing?: Easing;
+  /** Caps the repaint rate; useful for slow, large animations. */
+  maxFps?: number;
+}
+
+export interface WireAnimation {
+  duration_ms: number;
+  from: WireStyle;
+  to: WireStyle;
+  repeat: boolean;
+  easing: string;
+  max_fps?: number;
+}
+
+/** Converts an animation to its wire form, styles included. */
+export function normalizeAnimation(spec: AnimationSpec | null | undefined): WireAnimation | null {
+  if (!spec) return null;
+  return {
+    duration_ms: spec.duration,
+    from: normalizeStyle(spec.from) ?? {},
+    to: normalizeStyle(spec.to) ?? {},
+    repeat: spec.repeat ?? false,
+    easing: spec.easing ?? "ease-in-out",
+    ...(spec.maxFps !== undefined ? { max_fps: spec.maxFps } : {}),
+  };
+}
+
 function applyBox(
   out: WireStyle,
   key: "margin" | "padding" | "border_widths",

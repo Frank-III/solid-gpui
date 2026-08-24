@@ -14,8 +14,21 @@ describe("eventNameFromProp", () => {
     expect(eventNameFromProp("style")).toBeNull();
   });
 
+  it("knows the listeners added alongside the newer elements", () => {
+    expect(eventNameFromProp("onFocus")).toBe("focus");
+    expect(eventNameFromProp("onBlur")).toBe("blur");
+    expect(eventNameFromProp("onDragStart")).toBe("dragStart");
+    expect(eventNameFromProp("onDrop")).toBe("drop");
+    expect(eventNameFromProp("onScroll")).toBe("scroll");
+    expect(eventNameFromProp("onRange")).toBe("range");
+    expect(eventNameFromProp("onInput")).toBe("input");
+    expect(eventNameFromProp("onMousePressure")).toBe("mousePressure");
+    expect(eventNameFromProp("onPinch")).toBe("pinch");
+    expect(eventNameFromProp("onAuxClick")).toBe("auxClick");
+  });
+
   it("rejects listeners the host cannot attach", () => {
-    expect(eventNameFromProp("onDragStart")).toBeNull();
-    expect(eventNameFromProp("onFocus")).toBeNull();
+    expect(eventNameFromProp("onDoubleClick")).toBeNull();
+    expect(eventNameFromProp("onSubmit")).toBeNull();
   });
 });

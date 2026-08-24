@@ -79,7 +79,14 @@ export class Session {
         const node = this.#nodes.get(message.id);
         const handler = node?.handlers.get(message.n);
         if (!handler) return;
-        (handler as (payload: unknown) => void)(message.d["value"] ?? message.d);
+        // Events whose payload is a bare value arrive wrapped as `{value}`;
+        // some carry nothing at all, so neither shape can be assumed.
+        const detail = message.d;
+        const payload =
+          detail !== null && typeof detail === "object" && "value" in detail
+            ? (detail as { value: unknown }).value
+            : detail;
+        (handler as (payload: unknown) => void)(payload);
         // Event handlers write signals; run Solid's effects now so the
         // resulting mutations travel back in a single batch.
         flushSolid();

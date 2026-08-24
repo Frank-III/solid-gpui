@@ -200,6 +200,92 @@ describe("node lifetime", () => {
   });
 });
 
+describe("newer elements", () => {
+  it("keeps the tags the host dispatches on", async () => {
+    const host = await mount(() => (
+      <div>
+        <anchored anchor="bottom-left" snapToWindow>
+          <div>menu</div>
+        </anchored>
+        <deferred priority={2}>
+          <div>above</div>
+        </deferred>
+        <input value="hello" placeholder="type" />
+        <uniform-list count={1000} start={0} />
+      </div>
+    ));
+    const tags = host.operations
+      .filter((operation) => operation[0] === Op.CreateElement)
+      .map((operation) => operation[2]);
+    expect(tags).toEqual(
+      expect.arrayContaining(["anchored", "deferred", "input", "uniform-list"]),
+    );
+  });
+
+  it("sends the props each element is configured by", async () => {
+    const host = await mount(() => (
+      <div>
+        <anchored anchor="top-right" offset={{ x: 4, y: 8 }} snapToWindow snapMargin={12} />
+        <deferred priority={3} />
+        <input value="hi" placeholder="type here" />
+        <uniform-list count={500} start={40} onRange={() => {}} />
+      </div>
+    ));
+    expect(created(host, "anchored")?.[3]).toMatchObject({
+      anchor: "top-right",
+      offset: { x: 4, y: 8 },
+      snapToWindow: true,
+      snapMargin: 12,
+    });
+    expect(created(host, "deferred")?.[3]).toMatchObject({ priority: 3 });
+    expect(created(host, "input")?.[3]).toMatchObject({ value: "hi", placeholder: "type here" });
+    expect(created(host, "uniform-list")?.[3]).toMatchObject({
+      count: 500,
+      start: 40,
+      "@range": true,
+    });
+  });
+
+  it("sends an animation with both endpoints normalised", async () => {
+    const host = await mount(() => (
+      <div animate={{ duration: 300, from: { opacity: 0 }, to: { opacity: 1 }, repeat: true }} />
+    ));
+    expect(created(host, "div")?.[3]).toMatchObject({
+      animate: {
+        duration_ms: 300,
+        from: { opacity: 0 },
+        to: { opacity: 1 },
+        repeat: true,
+        easing: "ease-in-out",
+      },
+    });
+  });
+
+  it("references an element-valued prop by node id and keeps it alive", async () => {
+    const host = await mount(() => <div tooltip={<div>rich</div>} />);
+    const tooltip = created(host, "div")?.[3] as { tooltip?: { __node: number } };
+    expect(tooltip.tooltip).toEqual({ __node: expect.any(Number) });
+    // The referenced node never joins the tree, so only the pin keeps the
+    // collector from dropping it.
+    const dropped = host.operations.filter((operation) => operation[0] === Op.Drop);
+    expect(dropped.some((operation) => operation[1] === tooltip.tooltip!.__node)).toBe(false);
+  });
+
+  it("passes focus and drag props through", async () => {
+    const host = await mount(() => (
+      <div focusable tabIndex={2} autofocus occlude dragData={{ id: 7 }} onDrop={() => {}} />
+    ));
+    expect(created(host, "div")?.[3]).toMatchObject({
+      focusable: true,
+      tabIndex: 2,
+      autofocus: true,
+      occlude: true,
+      dragData: { id: 7 },
+      "@drop": true,
+    });
+  });
+});
+
 describe("teardown", () => {
   it("asks the host to quit", async () => {
     const host = await mount(() => <div />);

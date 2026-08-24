@@ -6,6 +6,7 @@
 //! to the mirrored tree and marks the root entity dirty. Everything that flows
 //! back to JavaScript is a single JSON line on stdout.
 
+mod input;
 mod protocol;
 mod render;
 mod style;
@@ -18,14 +19,14 @@ use std::sync::{Mutex, OnceLock};
 
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    KeyDownEvent,
-    KeyUpEvent, ParentElement, Render, Styled, TitlebarOptions, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowOptions, div, point, px, size,
+    KeyDownEvent, KeyUpEvent, ParentElement, Render, Styled, TitlebarOptions, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowOptions, div, point, px, size,
 };
 use gpui_platform::application;
 use serde_json::Value;
 
 use protocol::{NodeId, Op, Outgoing, WindowConfig};
+use render::Shared;
 use tree::Tree;
 
 static STDOUT: OnceLock<Mutex<std::io::Stdout>> = OnceLock::new();
@@ -61,32 +62,104 @@ pub fn emit_error(message: String) {
 /// The single gpui entity backing the window. Everything below it is rebuilt
 /// from the mirrored tree on each repaint.
 struct Root {
-    tree: Rc<RefCell<Tree>>,
+    tree: Shared,
     focus: FocusHandle,
     focused_once: bool,
+    /// The node that held focus at the end of the previous frame, so focus and
+    /// blur can be reported without an element-level hook, which gpui does not
+    /// expose.
+    focused_node: Option<NodeId>,
 }
 
 impl Root {
-    fn new(tree: Rc<RefCell<Tree>>, cx: &mut App) -> Self {
+    fn new(tree: Shared, cx: &mut App) -> Self {
         Self {
             tree,
             focus: cx.focus_handle(),
             focused_once: false,
+            focused_node: None,
         }
+    }
+
+    /// Honours `autofocus` the first time a node carrying it is rendered.
+    fn apply_autofocus(&mut self, window: &mut Window, cx: &mut App) {
+        let pending: Vec<FocusHandle> = {
+            let tree = self.tree.borrow();
+            tree.focusables()
+                .filter_map(|(id, focus)| {
+                    let node = tree.get(id)?;
+                    if node.prop_bool("autofocus") && !node.focused_once.get() {
+                        node.focused_once.set(true);
+                        Some(focus.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+        if let Some(focus) = pending.into_iter().next() {
+            window.focus(&focus, cx);
+        }
+    }
+
+    /// Compares this frame's focus with the last one and reports the change.
+    fn report_focus(&mut self, window: &mut Window, cx: &mut App) {
+        let focused = window.focused(cx);
+        let current = focused.as_ref().and_then(|handle| {
+            let tree = self.tree.borrow();
+            tree.focusables()
+                .find(|(_, candidate)| *candidate == handle)
+                .map(|(id, _)| id)
+        });
+        if current == self.focused_node {
+            return;
+        }
+        if let Some(previous) = self.focused_node {
+            // A text field reports its accumulated edit as it loses focus.
+            let state = self
+                .tree
+                .borrow()
+                .get(previous)
+                .and_then(|node| node.input.clone());
+            if let Some(state) = state {
+                state.update(cx, |input, _| input.blurred());
+            }
+            if self
+                .tree
+                .borrow()
+                .get(previous)
+                .is_some_and(|node| node.listens_to("blur"))
+            {
+                emit_event(previous, "blur", Value::Null);
+            }
+        }
+        if let Some(next) = current
+            && self
+                .tree
+                .borrow()
+                .get(next)
+                .is_some_and(|node| node.listens_to("focus"))
+        {
+            emit_event(next, "focus", Value::Null);
+        }
+        self.focused_node = current;
     }
 }
 
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.focused_once {
-            // The root owns keyboard focus so that key listeners anywhere in the
-            // tree receive events; gpui only delivers them along the focus path.
+            // The root holds keyboard focus so that key listeners on elements
+            // that are not themselves focusable still receive events.
             self.focused_once = true;
             window.focus(&self.focus, cx);
         }
+        self.apply_autofocus(window, cx);
+        self.report_focus(window, cx);
+        render::report_scrolls(&self.tree.borrow());
 
-        let tree = self.tree.borrow();
-        let content = tree.root.map(|id| render::build(&tree, id));
+        let root = self.tree.borrow().root;
+        let content = root.map(|id| render::build(&self.tree, id));
 
         let down_tree = self.tree.clone();
         let up_tree = self.tree.clone();
@@ -97,13 +170,11 @@ impl Render for Root {
             .size(gpui::relative(1.))
             .on_key_down(move |event: &KeyDownEvent, _window, _cx| {
                 let payload = render::key_payload(event);
-                let mut ids = Vec::new();
-                render::dispatch_key(&down_tree.borrow(), "keyDown", &payload, &mut ids);
+                render::dispatch_key(&down_tree.borrow(), "keyDown", &payload);
             })
             .on_key_up(move |event: &KeyUpEvent, _window, _cx| {
                 let payload = render::keystroke_json(&event.keystroke, false);
-                let mut ids = Vec::new();
-                render::dispatch_key(&up_tree.borrow(), "keyUp", &payload, &mut ids);
+                render::dispatch_key(&up_tree.borrow(), "keyUp", &payload);
             })
             .children(content)
     }
@@ -155,7 +226,7 @@ fn window_options(config: &WindowConfig, cx: &mut App) -> WindowOptions {
 
 /// Applies one batch. Returns `true` when JavaScript asked the host to quit.
 fn apply_batch(
-    tree: &Rc<RefCell<Tree>>,
+    tree: &Shared,
     root: &Rc<RefCell<Option<Entity<Root>>>>,
     batch: Vec<Op>,
     cx: &mut App,
@@ -188,14 +259,13 @@ fn apply_batch(
             }
             continue;
         }
-        quit |= tree.borrow_mut().apply(op);
+        let mut borrowed = tree.borrow_mut();
+        quit |= borrowed.apply(op, cx);
     }
 
     let dirty = std::mem::replace(&mut tree.borrow_mut().dirty, false);
-    if dirty {
-        if let Some(entity) = root.borrow().clone() {
-            entity.update(cx, |_, cx| cx.notify());
-        }
+    if dirty && let Some(entity) = root.borrow().clone() {
+        entity.update(cx, |_, cx| cx.notify());
     }
     quit
 }
@@ -230,7 +300,9 @@ fn main() {
     });
 
     application().run(move |cx: &mut App| {
-        let tree = Rc::new(RefCell::new(Tree::default()));
+        cx.bind_keys(input::key_bindings());
+
+        let tree: Shared = Rc::new(RefCell::new(Tree::default()));
         let root: Rc<RefCell<Option<Entity<Root>>>> = Rc::new(RefCell::new(None));
 
         cx.spawn(async move |cx| {
