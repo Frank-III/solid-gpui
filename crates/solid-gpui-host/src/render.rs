@@ -135,6 +135,14 @@ where
         style::apply(base, element.style());
     }
 
+    // A focusable element's bindings are scoped to it by a key context, which
+    // gpui matches while the element or a descendant holds focus.
+    if !node.keys.is_empty() && node.is_focusable() {
+        if let Ok(context) = gpui::KeyContext::try_from(crate::keys::context(node.id).as_str()) {
+            element = element.key_context(context);
+        }
+    }
+
     if let Some(group) = node.prop_str("group") {
         element = element.group(SharedString::from(group.to_owned()));
     }
@@ -467,6 +475,9 @@ pub fn build(tree: &Shared, id: NodeId) -> AnyElement {
         "image-cache" => build_image_cache(node, tree),
         "canvas" => build_canvas(node, tree),
         "scrollbar" => build_scrollbar(node, tree),
+        // The menu bar is read out of the tree and handed to the platform, so
+        // the tags that describe it paint nothing.
+        "menu" | "item" | "separator" => gpui::Empty.into_any_element(),
         "text" => build_text(node, tree),
         "anchored" => {
             let mut element = anchored();

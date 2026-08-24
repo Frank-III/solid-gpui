@@ -87,7 +87,28 @@ function attachCanvas(node: GpuiNode, value: unknown): void {
   );
 }
 
+/**
+ * Turns a `keys` prop into the keystrokes the host binds and the closures that
+ * answer them.
+ *
+ * gpui resolves a keystroke to an action and dispatches it along the focus path,
+ * so what travels is the list of keystrokes; the host reports which one fired by
+ * its index and the closure is looked up here.
+ */
+function wireKeys(node: GpuiNode, value: unknown): string[] | null {
+  const bindings = value as Record<string, () => void> | null | undefined;
+  if (!bindings) {
+    node.handlers.delete("keys");
+    return null;
+  }
+  const keystrokes = Object.keys(bindings);
+  const handlers = Object.values(bindings);
+  node.handlers.set("keys", (event: { index: number }) => handlers[event.index]?.());
+  return keystrokes;
+}
+
 function wireValue(node: GpuiNode, name: string, value: unknown): unknown {
+  if (name === "keys") return wireKeys(node, value);
   const eventName = eventNameFromProp(name);
   if (eventName) {
     if (typeof value === "function") {

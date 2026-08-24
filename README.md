@@ -93,6 +93,7 @@ how to develop without a Rust toolchain at all.
 | [docs/elements.md](docs/elements.md) | Every tag: text and spans, text input, virtualised lists, canvas, scrollbars |
 | [docs/styling.md](docs/styling.md) | The style object, groups and state styles, animation |
 | [docs/events.md](docs/events.md) | Listeners, focus and keyboard, drag and drop, tooltips |
+| [docs/commands.md](docs/commands.md) | The window, dialogs, key bindings, the menu bar |
 | [docs/protocol.md](docs/protocol.md) | The wire protocol between the two processes |
 | [docs/setup.md](docs/setup.md) | The JSX transform, TypeScript options, developing without Rust |
 
@@ -133,6 +134,8 @@ re-exported from `solid-js`, which is where the JSX transform imports them from.
 ## Current limitations
 
 - **One window per process.** The protocol has a single root.
+- **The menu bar is macOS-shaped.** The platform names the first menu after the
+  application and adopts one called `Window` as its own.
 - **A `<list>` shows blank rows for one frame.** gpui asks for a row while it is
   laying out and cannot wait for a round trip, so a row outside the rendered
   window stands in at `itemHeight` until the next frame carries it.

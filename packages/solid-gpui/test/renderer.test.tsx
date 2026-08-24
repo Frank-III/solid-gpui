@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createSignal, flush } from "solid-js";
 import { For, Show, render, type Dispose } from "solid-gpui";
 import { Op } from "../src/protocol.js";
+import { session } from "../src/session.js";
 import { FakeHost, connectFake } from "./fake-host.js";
 
 let dispose: Dispose | null = null;
@@ -353,6 +354,47 @@ describe("newer elements", () => {
     expect(inserted).toBeDefined();
   });
 
+  it("sends the keystrokes an element binds, and dispatches by index", async () => {
+    const fired: string[] = [];
+    const host = await mount(() => (
+      <div
+        focusable
+        keys={{
+          "cmd-k": () => fired.push("palette"),
+          escape: () => fired.push("dismiss"),
+        }}
+      />
+    ));
+    expect(created(host, "div")?.[3]).toMatchObject({ keys: ["cmd-k", "escape"] });
+    // The keystrokes are the whole declaration: the host reports which one
+    // fired and the closure is looked up here, so there is no listener flag.
+    const element = created(host, "div")?.[1] as number;
+    host.emit({ t: "e", id: element, n: "keys", d: { index: 1 } });
+    host.emit({ t: "e", id: element, n: "keys", d: { index: 0 } });
+    expect(fired).toEqual(["dismiss", "palette"]);
+  });
+
+  it("describes a menu bar without painting it", async () => {
+    const host = await mount(() => (
+      <menu label="File">
+        <item label="New" shortcut="cmd-n" onSelect={() => {}} />
+        <separator />
+        <menu label="Recent">
+          <item label="a.txt" />
+        </menu>
+      </menu>
+    ));
+    const tags = host.operations
+      .filter((operation) => operation[0] === Op.CreateElement)
+      .map((operation) => operation[2]);
+    expect(tags).toEqual(expect.arrayContaining(["menu", "item", "separator"]));
+    expect(created(host, "item")?.[3]).toMatchObject({ label: "a.txt" });
+    const first = host.operations.find(
+      (operation) => operation[0] === Op.CreateElement && operation[2] === "item",
+    );
+    expect(first?.[3]).toMatchObject({ label: "New", shortcut: "cmd-n", "@select": true });
+  });
+
   it("sends a multi-line field's own props", async () => {
     const host = await mount(() => <input multiline rows={4} value={"a\nb"} />);
     expect(created(host, "input")?.[3]).toMatchObject({
@@ -451,6 +493,27 @@ describe("newer elements", () => {
       dragData: { id: 7 },
       "@drop": true,
     });
+  });
+});
+
+describe("commands", () => {
+  it("asks the host and resolves with its answer", async () => {
+    const host = await mount(() => <div />);
+    const answer = session.call<number>("dialog.message", { message: "hi" });
+    await tick();
+    const call = host.operations.find((operation) => operation[0] === Op.Call);
+    expect(call).toEqual([Op.Call, expect.any(Number), "dialog.message", { message: "hi" }]);
+    host.emit({ t: "r", i: call![1] as number, d: 1 });
+    expect(await answer).toBe(1);
+  });
+
+  it("rejects when the host could not carry the command out", async () => {
+    const host = await mount(() => <div />);
+    const answer = session.call("shell.revealPath", { path: "/nowhere" });
+    await tick();
+    const call = host.operations.find((operation) => operation[0] === Op.Call);
+    host.emit({ t: "r", i: call![1] as number, e: "no path was given" });
+    await expect(answer).rejects.toThrow("no path was given");
   });
 });
 

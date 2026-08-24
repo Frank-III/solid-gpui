@@ -28,6 +28,8 @@ export class Session {
   #transport: HostConnection | null = null;
   #scheduled = false;
   #closeListeners = new Set<() => void>();
+  #pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  #nextRequest = 1;
 
   get running(): boolean {
     return this.#transport !== null;
@@ -99,12 +101,43 @@ export class Session {
       case "error":
         process.stderr.write(`solid-gpui host error: ${message.m}\n`);
         return;
+      case "r": {
+        const pending = this.#pending.get(message.i);
+        if (!pending) return;
+        this.#pending.delete(message.i);
+        if (message.e === undefined) pending.resolve(message.d);
+        else pending.reject(new Error(`solid-gpui: ${message.e}`));
+        return;
+      }
       case "closed":
         for (const listener of this.#closeListeners) listener();
+        for (const pending of this.#pending.values()) {
+          pending.reject(new Error("solid-gpui: the window closed"));
+        }
+        this.#pending.clear();
         return;
       default:
         return;
     }
+  }
+
+  /**
+   * Asks the host to do something and waits for its answer.
+   *
+   * Everything else on this channel is one-way; a file picker or a message box
+   * is not, so each call carries an id the reply comes back under.
+   */
+  call<T>(name: string, args: unknown = null): Promise<T> {
+    if (!this.#transport) {
+      return Promise.reject(new Error("solid-gpui: no session is running"));
+    }
+    const request = this.#nextRequest++;
+    const answer = new Promise<T>((resolve, reject) => {
+      this.#pending.set(request, { resolve: resolve as (value: unknown) => void, reject });
+    });
+    this.push([Op.Call, request, name, args]);
+    this.flush();
+    return answer;
   }
 
   register(node: GpuiNode): void {

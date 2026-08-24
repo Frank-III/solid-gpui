@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
-import { render } from "solid-gpui";
+import { appWindow, dialog, render, shell } from "solid-gpui";
 import type { GpuiStyle } from "solid-gpui";
 
 const palette = {
@@ -77,6 +77,7 @@ function App() {
 
   return (
     <div
+      keys={{ "cmd-shift-k": () => setNote("cmd-shift-k, application wide") }}
       style={{
         flexDirection: "column",
         gap: 12,
@@ -88,6 +89,17 @@ function App() {
         fontSize: 14,
       }}
     >
+      <menu label="Showcase">
+        <item label="Say hello" shortcut="cmd-shift-h" onSelect={() => setNote("hello from the menu")} />
+        <separator />
+        <item label="Reveal this project" onSelect={() => shell.revealPath(process.cwd())} />
+      </menu>
+      <menu label="Window">
+        <item label="Minimise" shortcut="cmd-shift-m" onSelect={() => appWindow.minimize()} />
+        <item label="Zoom" onSelect={() => appWindow.zoom()} />
+        <item label="Full screen" shortcut="ctrl-cmd-f" onSelect={() => appWindow.toggleFullscreen()} />
+      </menu>
+
       <div style={{ alignItems: "center", gap: 8 }}>
         <div
           style={{ size: 10, borderRadius: 5, background: palette.accent }}
@@ -188,6 +200,37 @@ function App() {
               </anchored>
             </deferred>
           </Show>
+
+          <div style={heading}>COMMANDS AND KEYS</div>
+          <div style={{ gap: 8 }}>
+            <div
+              style={button}
+              hoverStyle={{ background: "#363642" }}
+              onClick={async () => {
+                const answer = await dialog.message({
+                  message: "A platform message box",
+                  detail: "Opened by the host, answered back over the pipe.",
+                  answers: ["Fine", "Cancel"],
+                });
+                setNote(`you pressed ${answer === 0 ? "Fine" : "Cancel"}`);
+              }}
+            >
+              message box
+            </div>
+            <div
+              style={button}
+              hoverStyle={{ background: "#363642" }}
+              onClick={async () => {
+                const picked = await dialog.openFile({ multiple: true });
+                setNote(picked ? `picked ${picked.length} file(s)` : "cancelled");
+              }}
+            >
+              open a file
+            </div>
+          </div>
+          <div style={{ color: palette.muted, fontSize: 12 }}>
+            cmd-shift-k anywhere, or the Showcase menu
+          </div>
 
           <div style={heading}>CANVAS</div>
           <canvas

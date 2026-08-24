@@ -19,6 +19,7 @@ The tags this renderer understands. Styling them is covered in
 | `image-cache` | gpui `image_cache()` | Keeps the images inside it decoded rather than reloading them. |
 | `canvas` | gpui `canvas()` | A surface the application paints itself, from a recorded draw list. |
 | `scrollbar` | custom | Wraps a scrollable and lays a bar over its edge. |
+| `menu`, `item`, `separator` | gpui `Menu` | The application's menu bar. Painted by the platform, not by gpui. See [commands.md](commands.md). |
 
 Every element defaults to `display: flex`, not to gpui's own `display: block`.
 That is what makes `flexDirection`, `alignItems`, `justifyContent` and `gap`

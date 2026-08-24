@@ -7,7 +7,10 @@
 //! back to JavaScript is a single JSON line on stdout.
 
 mod canvas;
+mod commands;
 mod input;
+mod keys;
+mod menu;
 mod protocol;
 mod render;
 mod scrollbar;
@@ -22,7 +25,7 @@ use std::sync::{Mutex, OnceLock};
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     KeyDownEvent, KeyUpEvent, ParentElement, Render, Styled, TitlebarOptions, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowOptions, div, point, px, size,
+    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowOptions, div, point, px, size,
 };
 use gpui_platform::application;
 use serde_json::Value;
@@ -55,6 +58,24 @@ pub fn emit_event(id: NodeId, name: &'static str, payload: Value) {
 
 pub fn emit_log(message: String) {
     emit(&Outgoing::Log { m: message });
+}
+
+/// Answers a `Call` that succeeded.
+pub fn emit_answer(request: protocol::RequestId, value: Value) {
+    emit(&Outgoing::Answer {
+        i: request,
+        d: Some(value),
+        e: None,
+    });
+}
+
+/// Answers a `Call` that failed. The application sees a rejected promise.
+pub fn emit_failure(request: protocol::RequestId, message: String) {
+    emit(&Outgoing::Answer {
+        i: request,
+        d: None,
+        e: Some(message),
+    });
 }
 
 pub fn emit_error(message: String) {
@@ -230,6 +251,7 @@ fn window_options(config: &WindowConfig, cx: &mut App) -> WindowOptions {
 fn apply_batch(
     tree: &Shared,
     root: &Rc<RefCell<Option<Entity<Root>>>>,
+    window: &Rc<RefCell<Option<WindowHandle<Root>>>>,
     batch: Vec<Op>,
     cx: &mut App,
 ) -> bool {
@@ -247,6 +269,7 @@ fn apply_batch(
             }) {
                 Ok(handle) => {
                     *root.borrow_mut() = handle.entity(cx).ok();
+                    *window.borrow_mut() = Some(handle);
                     cx.on_window_closed(|cx, _id| {
                         emit(&Outgoing::Closed);
                         cx.quit();
@@ -261,8 +284,34 @@ fn apply_batch(
             }
             continue;
         }
+        if let Op::Call {
+            request,
+            name,
+            args,
+        } = op
+        {
+            let handle = *window.borrow();
+            commands::run(request, &name, &args, handle, cx);
+            continue;
+        }
         let mut borrowed = tree.borrow_mut();
         quit |= borrowed.apply(op, cx);
+    }
+
+    // The keymap is global, so it is rebuilt once for the batch rather than once
+    // for each element whose bindings changed.
+    // The keymap first: the platform reads an item's shortcut out of it while
+    // the menu is being built, so a menu built before the bindings exist shows
+    // no shortcuts at all.
+    let menus = std::mem::replace(&mut tree.borrow_mut().menus_dirty, false);
+    let rebind = std::mem::replace(&mut tree.borrow_mut().keys_dirty, false) || menus;
+    if rebind {
+        let borrowed = tree.borrow();
+        keys::rebuild(&borrowed, cx);
+    }
+    if menus {
+        let borrowed = tree.borrow();
+        menu::rebuild(&borrowed, cx);
     }
 
     let dirty = std::mem::replace(&mut tree.borrow_mut().dirty, false);
@@ -304,12 +353,22 @@ fn main() {
     application().run(move |cx: &mut App| {
         cx.bind_keys(input::key_bindings());
 
+        // Every binding an element declares resolves to this one action, which
+        // names the element that asked for it.
+        cx.on_action(|action: &keys::Bound, _cx| {
+            emit_event(action.node, "keys", serde_json::json!({ "index": action.index }));
+        });
+        cx.on_action(|action: &menu::Selected, _cx| {
+            emit_event(action.node, "select", Value::Null);
+        });
+
         let tree: Shared = Rc::new(RefCell::new(Tree::default()));
         let root: Rc<RefCell<Option<Entity<Root>>>> = Rc::new(RefCell::new(None));
+        let window: Rc<RefCell<Option<WindowHandle<Root>>>> = Rc::new(RefCell::new(None));
 
         cx.spawn(async move |cx| {
             while let Ok(batch) = receiver.recv().await {
-                let quit = cx.update(|cx| apply_batch(&tree, &root, batch, cx));
+                let quit = cx.update(|cx| apply_batch(&tree, &root, &window, batch, cx));
                 if quit {
                     break;
                 }

@@ -110,6 +110,11 @@ export interface ResizeEvent {
   height: number;
 }
 
+/** Which of an element's declared key bindings fired. */
+export interface KeysEvent {
+  index: number;
+}
+
 /** Fired when the pointer enters or leaves an element. */
 export type HoverEvent = boolean;
 
@@ -135,6 +140,8 @@ export interface EventMap {
   change: InputEvent;
   range: RangeEvent;
   resize: ResizeEvent;
+  keys: KeysEvent;
+  select: null;
 }
 
 export type EventName = keyof EventMap;
@@ -161,6 +168,8 @@ const EVENT_NAMES = new Set<string>([
   "change",
   "range",
   "resize",
+  "keys",
+  "select",
 ]);
 
 /**

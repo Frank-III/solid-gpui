@@ -60,6 +60,13 @@ export { hsla, rgb, rgba, toColor } from "./color.js";
 export type { ColorInput, Hsla } from "./color.js";
 export { auto, px, relative, rems, toLength } from "./length.js";
 export type { LengthInput } from "./length.js";
+export { appWindow, dialog, shell } from "./commands.js";
+export type {
+  MessageLevel,
+  MessageOptions,
+  OpenFileOptions,
+  SaveFileOptions,
+} from "./commands.js";
 export { CanvasContext } from "./canvas.js";
 export type { Draw, DrawCommand, Vertex } from "./canvas.js";
 export { normalizeStyle, normalizeAnimation } from "./style.js";

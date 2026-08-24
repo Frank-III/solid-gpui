@@ -17,6 +17,7 @@ in logical pixels and modifiers as booleans.
 | `onInput`, `onChange` | Edits to an `<input>` |
 | `onRange` | A `<uniform-list>` or `<list>` asking for rows |
 | `onResize` | An element's size, once laid out and whenever it changes |
+| `onSelect` | A menu `<item>` being chosen |
 
 ```tsx
 <div onClick={(event) => console.log(event.position, event.clickCount)} />
@@ -40,6 +41,10 @@ listener hears every keystroke. Filter on `event.key` yourself.
 
 `tabIndex` also puts the element in the tab order. `onFocus` and `onBlur` report
 the change.
+
+For a shortcut rather than a raw keystroke, use the `keys` prop instead of
+`onKeyDown`. It goes through gpui's keymap, so it does not compete with every
+other key listener in the tree. See [commands.md](commands.md#key-bindings).
 
 ## Drag and drop
 

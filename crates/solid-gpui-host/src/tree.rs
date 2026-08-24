@@ -51,6 +51,9 @@ pub struct Node {
     pub thumb_style: Option<WireStyle>,
     pub animation: Option<WireAnimation>,
     pub listeners: HashSet<String>,
+    /// Keystrokes this element asked to be told about, in the order they were
+    /// declared. The index is what identifies one of them on the wire.
+    pub keys: Vec<String>,
     pub element_id: ElementId,
     pub focus: Option<FocusHandle>,
     pub scroll: Option<ScrollHandle>,
@@ -108,6 +111,7 @@ impl Node {
             thumb_style: None,
             animation: None,
             listeners: HashSet::new(),
+            keys: Vec::new(),
             element_id: ElementId::Integer(id),
             focus: None,
             scroll: None,
@@ -191,6 +195,12 @@ pub struct Tree {
     pub root: Option<NodeId>,
     /// Set whenever an operation changed anything the next frame would paint.
     pub dirty: bool,
+    /// Set when a `keys` prop changed, so the keymap is rebuilt once per batch
+    /// rather than once per operation.
+    pub keys_dirty: bool,
+    /// Set when anything under a `<menu>` changed, so the platform menu bar is
+    /// rebuilt once per batch.
+    pub menus_dirty: bool,
 }
 
 fn parse_style(value: &Value) -> Option<WireStyle> {
@@ -209,6 +219,32 @@ fn parse_style(value: &Value) -> Option<WireStyle> {
 impl Tree {
     pub fn get(&self, id: NodeId) -> Option<&Node> {
         self.nodes.get(&id)
+    }
+
+    pub fn nodes(&self) -> impl Iterator<Item = &Node> {
+        self.nodes.values()
+    }
+
+    fn is_menu(&self, id: NodeId) -> bool {
+        let Some(node) = self.nodes.get(&id) else {
+            return false;
+        };
+        let menuish = |tag: &str| matches!(tag, "menu" | "item" | "separator");
+        menuish(&node.tag)
+            || node
+                .parent
+                .and_then(|parent| self.nodes.get(&parent))
+                .is_some_and(|parent| menuish(&parent.tag))
+    }
+
+    /// Notes that an operation may have changed the menu bar. The check is by
+    /// tag rather than by walking the tree, so an application without menus
+    /// pays nothing for having the hook here.
+    fn touch_menu(&mut self, ids: [Option<NodeId>; 2]) {
+        if self.menus_dirty {
+            return;
+        }
+        self.menus_dirty = ids.into_iter().flatten().any(|id| self.is_menu(id));
     }
 
     /// Every node that tracks its own scrolling.
@@ -358,6 +394,18 @@ impl Tree {
             node.commands = commands;
             return;
         }
+        if key == "keys" {
+            node.keys = value
+                .as_array()
+                .map(|keys| {
+                    keys.iter()
+                        .map(|key| key.as_str().unwrap_or_default().to_owned())
+                        .collect()
+                })
+                .unwrap_or_default();
+            self.keys_dirty = true;
+            return;
+        }
         match (key, parsed, animation) {
             ("style", Some(parsed), _) => node.style = parsed,
             ("hoverStyle", Some(parsed), _) => node.hover_style = parsed,
@@ -436,8 +484,12 @@ impl Tree {
                 if let Some(node) = self.nodes.get_mut(&id) {
                     node.text = SharedString::from(text);
                 }
+                self.touch_menu([Some(id), None]);
             }
-            Op::SetProp { id, key, value } => self.set_prop(id, &key, value, cx),
+            Op::SetProp { id, key, value } => {
+                self.set_prop(id, &key, value, cx);
+                self.touch_menu([Some(id), None]);
+            }
             Op::Insert {
                 parent,
                 child,
@@ -458,13 +510,23 @@ impl Tree {
                 if let Some(node) = self.nodes.get_mut(&child) {
                     node.parent = Some(parent);
                 }
+                self.touch_menu([Some(parent), Some(child)]);
             }
-            Op::Remove { parent, child } => self.detach(parent, child),
+            Op::Remove { parent, child } => {
+                self.touch_menu([Some(parent), Some(child)]);
+                self.detach(parent, child);
+            }
             Op::SetRoot { id } => self.root = Some(id),
             Op::Drop { id } => {
-                self.nodes.remove(&id);
+                self.touch_menu([Some(id), None]);
+                if let Some(node) = self.nodes.remove(&id)
+                    && !node.keys.is_empty()
+                {
+                    self.keys_dirty = true;
+                }
             }
-            Op::OpenWindow(_) => {}
+            // Both are handled before the tree sees them.
+            Op::OpenWindow(_) | Op::Call { .. } => {}
             Op::Quit => return true,
         }
         false

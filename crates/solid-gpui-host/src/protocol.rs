@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 pub type NodeId = u64;
+pub type RequestId = u64;
 
 /// A mutation requested by the JavaScript side.
 #[derive(Debug)]
@@ -47,6 +48,13 @@ pub enum Op {
     Quit,
     Drop {
         id: NodeId,
+    },
+    /// Something the application asked the host to do that is not a tree
+    /// mutation, and which is answered by request id.
+    Call {
+        request: RequestId,
+        name: String,
+        args: Value,
     },
 }
 
@@ -134,6 +142,11 @@ impl Op {
             9 => Ok(Op::Drop {
                 id: as_id(parts.get(1), "drop")?,
             }),
+            10 => Ok(Op::Call {
+                request: as_id(parts.get(1), "call")?,
+                name: as_string(parts.get(2), "command name")?,
+                args: parts.get(3).cloned().unwrap_or(Value::Null),
+            }),
             other => Err(format!("unknown opcode {other}")),
         }
     }
@@ -163,4 +176,13 @@ pub enum Outgoing {
     Log { m: String },
     #[serde(rename = "error")]
     Error { m: String },
+    /// The answer to a `Call`. `e` carries the reason when it failed.
+    #[serde(rename = "r")]
+    Answer {
+        i: RequestId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        d: Option<Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        e: Option<String>,
+    },
 }

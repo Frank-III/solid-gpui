@@ -100,6 +100,16 @@ export interface ElementProps {
   onKeyDown?: (event: KeyEvent) => void;
   onKeyUp?: (event: KeyEvent) => void;
 
+  /**
+   * Keystrokes this element handles, as gpui spells them: `"cmd-k"`,
+   * `"ctrl-shift-p"`, `"escape"`, or a sequence such as `"ctrl-x ctrl-s"`.
+   *
+   * A focusable element's bindings fire only while it holds focus. On an
+   * element that is not focusable they are application-wide, the same rule
+   * `onKeyDown` follows.
+   */
+  keys?: Record<string, () => void>;
+
   ref?: GpuiNode | ((element: GpuiNode) => void);
   children?: GpuiChild;
 }
@@ -213,6 +223,47 @@ export interface ScrollbarProps extends ElementProps {
    * `minWidth`, when horizontal) keeps it grabbable in a very long list.
    */
   thumbStyle?: GpuiStyle;
+}
+
+/**
+ * A menu in the application's menu bar, or a submenu when nested inside one.
+ *
+ * Menus are written in JSX so that Solid's control flow works on them, but they
+ * are not painted: the host reads them out of the tree and hands them to the
+ * platform. On macOS that is the menu bar at the top of the screen.
+ *
+ * ```tsx
+ * <menu label="File">
+ *   <item label="New" shortcut="cmd-n" onSelect={newDocument} />
+ *   <separator />
+ *   <menu label="Recent">
+ *     <For each={recent()}>{(file) => <item label={file} onSelect={() => open(file)} />}</For>
+ *   </menu>
+ * </menu>
+ * ```
+ */
+export interface MenuProps {
+  /** The menu's name. Text children are used when it is absent. */
+  label?: string;
+  disabled?: boolean;
+  ref?: GpuiNode | ((element: GpuiNode) => void);
+  children?: GpuiChild;
+}
+
+export interface MenuItemProps {
+  /** The item's name. Text children are used when it is absent. */
+  label?: string;
+  /**
+   * A keystroke that chooses this item, as gpui spells it. It becomes a real
+   * key binding, which is also how the platform knows what to print beside the
+   * item.
+   */
+  shortcut?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  onSelect?: () => void;
+  ref?: GpuiNode | ((element: GpuiNode) => void);
+  children?: string | number | GpuiChild;
 }
 
 export interface ImageCacheProps {
@@ -349,5 +400,11 @@ export namespace JSX {
     canvas: CanvasProps;
     /** A scrollbar driving another element's scroll position. */
     scrollbar: ScrollbarProps;
+    /** A menu in the application's menu bar, or a submenu inside one. */
+    menu: MenuProps;
+    /** One entry in a `<menu>`. */
+    item: MenuItemProps;
+    /** A dividing line between menu items. */
+    separator: Record<string, never>;
   }
 }

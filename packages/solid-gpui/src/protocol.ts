@@ -30,6 +30,8 @@ export const Op = {
   Quit: 8,
   /** `[Drop, id]` — the node is unreachable and its host state can be freed. */
   Drop: 9,
+  /** `[Call, requestId, name, args]` — asks the host to do something and reply. */
+  Call: 10,
 } as const;
 
 export type OpCode = (typeof Op)[keyof typeof Op];
@@ -44,7 +46,8 @@ export type Operation =
   | [typeof Op.SetRoot, number]
   | [typeof Op.OpenWindow, WindowOptions]
   | [typeof Op.Quit]
-  | [typeof Op.Drop, number];
+  | [typeof Op.Drop, number]
+  | [typeof Op.Call, number, string, unknown];
 
 /** Options accepted when opening the gpui window. */
 export interface WindowOptions {
@@ -89,4 +92,6 @@ export type HostMessage =
   | HostEventMessage
   | { t: "closed" }
   | { t: "log"; m: string }
-  | { t: "error"; m: string };
+  | { t: "error"; m: string }
+  /** The answer to a `Call`, by request id. `e` is set when it failed. */
+  | { t: "r"; i: number; d?: unknown; e?: string };

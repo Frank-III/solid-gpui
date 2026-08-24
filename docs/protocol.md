@@ -25,6 +25,7 @@ hundreds of operations and the shape never varies per opcode.
 | 7 | `[7, options]` | Open the window |
 | 8 | `[8]` | Close the window and exit |
 | 9 | `[9, id]` | The node is unreachable, so free its host state |
+| 10 | `[10, requestId, name, args]` | Ask the host to do something and answer under `requestId` |
 
 Operation 4 doubles as a move: a node already in the tree is detached from its
 current parent first.
@@ -44,6 +45,11 @@ tagged objects (`{"k":"px","v":12}`, `{"k":"rem","v":1.5}`, `{"k":"pct","v":0.5}
 `{"k":"auto"}`) and colours are HSLA with every channel in 0..1. Shorthand
 expansion, unit parsing and colour parsing all happen in JavaScript, so the host
 is a mechanical field-by-field assignment.
+
+`keys` is an array of keystrokes, and the index of the one that fired is what
+comes back, so the closures never leave JavaScript. The host turns each into a
+gpui key binding, scoped to the element when it is focusable and application-wide
+when it is not.
 
 A `<span>` inside a `<text>` is an ordinary element on the wire. It carries a
 `style` like any other, and the host reads the text fields out of it to build one
@@ -82,7 +88,9 @@ Remaining properties are element-specific.
 | `scrollbar` | `orientation`, `thickness`, `thumbStyle`. It scrolls its own first element child |
 | `anchored` | `anchor`, `position`, `offset`, `snapToWindow` |
 | `deferred` | `priority` |
-| any element | `group`, `groupOf`, `tooltip`, `dragData`, `focusable`, `tabIndex`, `autofocus`, `occlude`, `scrollTop`, `scrollLeft` |
+| `menu` | `label`, `disabled` |
+| `item` | `label`, `shortcut`, `checked`, `disabled` |
+| any element | `group`, `groupOf`, `tooltip`, `dragData`, `focusable`, `tabIndex`, `autofocus`, `occlude`, `scrollTop`, `scrollLeft`, `keys` |
 
 ## Messages (host to JavaScript)
 
@@ -93,6 +101,7 @@ Remaining properties are element-specific.
 | `{"t":"closed"}` | The window was closed |
 | `{"t":"log","m":"…"}` | Diagnostic text |
 | `{"t":"error","m":"…"}` | The host could not carry out a request |
+| `{"t":"r","i":N,"d":…}` | The answer to call `N`. `e` replaces `d` when it failed |
 
 Event names drop the `on` prefix and lower-case the first letter, so `onKeyDown`
 arrives as `keyDown`. Payloads carry positions in logical pixels and modifiers as
@@ -103,6 +112,9 @@ booleans. An event whose payload is a bare value, such as `hover`, wraps it as
 `resize` reports an element's size after it has been laid out, which is the only
 point at which it is known. It is emitted during layout, so a drawing that
 depends on the size lands on the following frame.
+
+`keys` reports which of an element's bindings fired, by index. `select` reports a
+menu item being chosen and carries nothing.
 
 Three events are requests rather than notifications.
 
