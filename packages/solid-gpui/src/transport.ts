@@ -6,6 +6,7 @@
 
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
+import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { HostMessage, Operation } from "./protocol.js";
@@ -37,14 +38,41 @@ const DEV_BUILD_PATHS = [
   "target/debug/solid-gpui-host",
 ];
 
+/** The package holding the prebuilt binary for the machine this is running on. */
+export function hostPackageName(
+  platform: string = process.platform,
+  arch: string = process.arch,
+): string {
+  return `@solid-gpui/host-${platform}-${arch}`;
+}
+
 /**
- * Finds the host binary. An explicit path or `SOLID_GPUI_HOST` always wins;
- * otherwise a locally built binary is preferred over one on `PATH` so that
- * working inside this repository does the obvious thing.
+ * Finds the binary that was installed with the package.
  *
- * The search walks up from the working directory, because an application is
- * usually run from its own folder rather than from the root of the checkout
- * that holds the build.
+ * The host is published as one small package per platform, listed in this
+ * package's optional dependencies; a package manager installs only the one whose
+ * `os` and `cpu` match, so at most one of them is ever present.
+ */
+function installedHostPath(): string | null {
+  const name = hostPackageName();
+  try {
+    const require = createRequire(import.meta.url);
+    const path = require.resolve(`${name}/solid-gpui-host`);
+    return existsSync(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Finds the host binary.
+ *
+ * An explicit path or `SOLID_GPUI_HOST` always wins. A locally built binary
+ * comes next, so that rebuilding the host inside this repository takes effect
+ * without uninstalling anything; the search walks up from the working directory,
+ * because an application is usually run from its own folder rather than from the
+ * root of the checkout that holds the build. After that comes the binary
+ * installed alongside the package, and finally whatever is on `PATH`.
  */
 export function resolveHostPath(explicit?: string): string {
   const candidate = explicit ?? process.env["SOLID_GPUI_HOST"];
@@ -65,7 +93,7 @@ export function resolveHostPath(explicit?: string): string {
     if (parent === directory) break;
     directory = parent;
   }
-  return "solid-gpui-host";
+  return installedHostPath() ?? "solid-gpui-host";
 }
 
 export class Transport implements HostConnection {

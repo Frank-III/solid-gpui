@@ -96,6 +96,7 @@ how to develop without a Rust toolchain at all.
 | [docs/commands.md](docs/commands.md) | The window, dialogs, key bindings, the menu bar |
 | [docs/protocol.md](docs/protocol.md) | The wire protocol between the two processes |
 | [docs/setup.md](docs/setup.md) | The JSX transform, TypeScript options, developing without Rust |
+| [docs/releasing.md](docs/releasing.md) | How the package and the host binary are published together |
 
 ## The window
 

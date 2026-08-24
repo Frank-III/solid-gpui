@@ -1,0 +1,124 @@
+name: release
+
+# Publishing is two steps that must happen in order: the per-platform host
+# packages first, then `solid-gpui`, which pins them exactly. A `solid-gpui`
+# published before its binaries exist installs into a broken state.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build everything but do not publish
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  host:
+    name: host (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-14
+            rust: aarch64-apple-darwin
+          - target: darwin-x64
+            runner: macos-13
+            rust: x86_64-apple-darwin
+          - target: linux-x64
+            runner: ubuntu-latest
+            rust: x86_64-unknown-linux-gnu
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            rust: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust }}
+
+      # The first build clones several gigabytes of Zed and compiles gpui, so
+      # both the checkout and the build output are worth keeping.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/solid-gpui-host/target
+          key: host-${{ matrix.target }}-${{ hashFiles('crates/solid-gpui-host/Cargo.lock', 'crates/solid-gpui-host/Cargo.toml') }}
+          restore-keys: host-${{ matrix.target }}-
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev pkg-config
+
+      - run: cargo build --release --target ${{ matrix.rust }} --manifest-path crates/solid-gpui-host/Cargo.toml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Assemble the npm package
+        run: |
+          node scripts/package-host.mjs \
+            --target ${{ matrix.target }} \
+            --binary crates/solid-gpui-host/target/${{ matrix.rust }}/release/solid-gpui-host
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-${{ matrix.target }}
+          path: dist/npm/${{ matrix.target }}
+
+  publish:
+    needs: host
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      # A version that has drifted between the crate, the package and the pins
+      # would publish a pair that cannot talk to each other.
+      - run: node scripts/version.mjs --check
+
+      - run: pnpm build
+      - run: pnpm test
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/npm
+          pattern: host-*
+
+      - name: Publish the host packages
+        if: ${{ !inputs.dry-run }}
+        run: |
+          for directory in dist/npm/host-*; do
+            npm publish "$directory" --access public --provenance
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish solid-gpui
+        if: ${{ !inputs.dry-run }}
+        run: npm publish --access public --provenance
+        working-directory: packages/solid-gpui
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -64,5 +64,11 @@
     "vite": {
       "optional": true
     }
+  },
+  "optionalDependencies": {
+    "@solid-gpui/host-darwin-arm64": "0.1.0",
+    "@solid-gpui/host-darwin-x64": "0.1.0",
+    "@solid-gpui/host-linux-x64": "0.1.0",
+    "@solid-gpui/host-linux-arm64": "0.1.0"
   }
 }

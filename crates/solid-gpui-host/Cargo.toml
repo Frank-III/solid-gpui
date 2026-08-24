@@ -28,6 +28,8 @@ serde_json = "1"
 [profile.release]
 opt-level = 3
 lto = "thin"
+# The binary ships over npm, so every megabyte is one the user downloads.
+strip = true
 
 # `gpui_platform` defaults to no features, and two of them are not optional here.
 #

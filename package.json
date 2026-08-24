@@ -6,6 +6,9 @@
   "scripts": {
     "build": "pnpm --filter solid-gpui build",
     "build:host": "cargo build --release --manifest-path crates/solid-gpui-host/Cargo.toml",
+    "package:host": "node scripts/package-host.mjs",
+    "version:set": "node scripts/version.mjs",
+    "version:check": "node scripts/version.mjs --check",
     "test": "pnpm --filter solid-gpui test",
     "typecheck": "pnpm -r typecheck",
     "example:counter": "pnpm --filter @solid-gpui/example-counter start",
