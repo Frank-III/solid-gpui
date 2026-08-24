@@ -44,7 +44,6 @@ function App() {
   const [focused, setFocused] = createSignal(false);
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [dropped, setDropped] = createSignal<string | null>(null);
-  const [scrollY, setScrollY] = createSignal(0);
   const [range, setRange] = createSignal({ start: 0, end: 40 });
 
   const first = () => Math.max(0, range().start - OVERSCAN);
@@ -107,12 +106,13 @@ function App() {
           <div style={{ gap: 8, alignItems: "center" }}>
             <div
               style={button}
-              hoverStyle={{ background: "#363642" }}
+              hoverStyle={{ background: "#363642", borderColor: palette.accent }}
               tooltip={
                 <div style={{ ...panel, gap: 2, maxWidth: 220 }}>
                   <div style={{ fontWeight: "semibold" }}>A rich tooltip</div>
                   <div style={{ color: palette.muted, fontSize: 12 }}>
-                    Built from JSX, not a plain string.
+                    Built from JSX, not a plain string. gpui waits half a second
+                    before showing it.
                   </div>
                 </div>
               }
@@ -174,7 +174,6 @@ function App() {
             count={TOTAL_ROWS}
             start={first()}
             onRange={(event) => setRange(event)}
-            onScroll={(event) => setScrollY(Math.round(event.offset.y))}
             style={{ flexGrow: 1, borderRadius: 6, background: palette.background }}
           >
             <For each={rows()}>
@@ -195,7 +194,7 @@ function App() {
             </For>
           </uniform-list>
           <div style={{ color: palette.muted, fontSize: 12 }}>
-            rendered {first()}–{last()} · scrolled {scrollY()}px
+            rendered {first()}–{last()} · viewport {range().start}–{range().end}
           </div>
         </div>
       </div>

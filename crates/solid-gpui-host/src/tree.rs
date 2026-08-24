@@ -10,7 +10,10 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
-use gpui::{App, AppContext, ElementId, Entity, FocusHandle, ScrollHandle, SharedString};
+use gpui::{
+    App, AppContext, ElementId, Entity, FocusHandle, ScrollHandle, SharedString,
+    UniformListScrollHandle,
+};
 use serde_json::Value;
 
 use crate::input::InputState;
@@ -49,6 +52,8 @@ pub struct Node {
     pub element_id: ElementId,
     pub focus: Option<FocusHandle>,
     pub scroll: Option<ScrollHandle>,
+    /// A virtualised list keeps its own scroll state, of a different type.
+    pub list_scroll: Option<UniformListScrollHandle>,
     pub input: Option<Entity<InputState>>,
     /// The last row range a virtualised list asked JavaScript for, so the same
     /// request is not sent again on every frame.
@@ -57,6 +62,8 @@ pub struct Node {
     pub focused_once: Cell<bool>,
     /// The scroll offset last reported to JavaScript.
     pub last_scroll: Cell<Option<(f32, f32)>>,
+    /// The row a virtualised list was last told to scroll to.
+    pub last_scroll_to: Cell<Option<usize>>,
 }
 
 impl Node {
@@ -80,10 +87,12 @@ impl Node {
             element_id: ElementId::Integer(id),
             focus: None,
             scroll: None,
+            list_scroll: None,
             input: None,
             last_range: Cell::new(None),
             focused_once: Cell::new(false),
             last_scroll: Cell::new(None),
+            last_scroll_to: Cell::new(None),
         }
     }
 
@@ -168,6 +177,15 @@ impl Tree {
         // Listener props are encoded as `@name`; the host only needs to know
         // whether a listener exists, since the closure itself lives in JS.
         if let Some(event) = key.strip_prefix('@') {
+            // Reporting the scroll offset needs a handle to read it from, and an
+            // element that only listens has no other reason to own one.
+            if event == "scroll"
+                && !value.is_null()
+                && let Some(node) = self.nodes.get_mut(&id)
+                && node.scroll.is_none()
+            {
+                node.scroll = Some(ScrollHandle::new());
+            }
             let Some(node) = self.nodes.get_mut(&id) else {
                 return;
             };
@@ -183,6 +201,13 @@ impl Tree {
         // node is mutably borrowed.
         match key {
             "focusable" | "tabIndex" | "autofocus" => self.ensure_focus(id, cx),
+            "scrollToItem" => {
+                if let Some(node) = self.nodes.get_mut(&id)
+                    && node.list_scroll.is_none()
+                {
+                    node.list_scroll = Some(UniformListScrollHandle::new());
+                }
+            }
             "scrollTop" | "scrollLeft" => {
                 if let Some(node) = self.nodes.get_mut(&id)
                     && node.scroll.is_none()

@@ -307,13 +307,20 @@ const last = () => Math.min(total, range().end + 20);
 `count` is the full row count; the children are the rows that are actually
 rendered, and `start` says which absolute index the first child is.
 
+`scrollToItem` scrolls a row to the top of the viewport; it acts on change, so
+setting it does not stop the user scrolling away afterwards.
+
 `onRange` asks for the rows the viewport needs. There is one wrinkle worth knowing:
 gpui asks for a range **during layout**, and the answer cannot wait for a round
 trip to JavaScript. The host renders whatever rows it already has and forwards
 the request, so the next frame carries the rest — a fast scroll shows one frame of
 catch-up. Rendering a margin around the visible range, as above, hides it.
 
-Rows must be the same height; that is what makes the list virtualisable.
+Rows must be the same height; that is what makes the list virtualisable — gpui
+measures the first row and derives every other row's position from it.
+
+A virtualised list keeps its own scroll state, so `onScroll` does not apply to it;
+`onRange` is how it reports where the viewport is.
 
 ## Drag and drop
 
@@ -352,7 +359,7 @@ logical pixels, modifiers as booleans.
 | `onMouseDown`, `onMouseUp`, `onMouseMove`, `onMouseExit` | Raw pointer movement |
 | `onHover` | Receives `true` on enter, `false` on leave |
 | `onScrollWheel` | Wheel and trackpad scrolling, before it is applied |
-| `onScroll` | The scroll offset of a `overflow: "scroll"` element changed |
+| `onScroll` | The scroll offset of an `overflow: "scroll"` element changed |
 | `onMousePressure`, `onPinch` | Trackpad force click and pinch |
 | `onKeyDown`, `onKeyUp` | Keystrokes; scoped to focus on a focusable element |
 | `onFocus`, `onBlur` | Focus entering or leaving a focusable element |

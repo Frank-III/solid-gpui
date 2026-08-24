@@ -50,7 +50,7 @@ alone; the host builds it on demand.
 `from` and `to` are style objects in the same normalised form.
 
 Remaining properties are element-specific: `src` on `img`, `path` on `svg`,
-`count` and `start` on `uniform-list`, `value` and `placeholder` on `input`,
+`count`, `start` and `scrollToItem` on `uniform-list`, `value` and `placeholder` on `input`,
 `anchor`/`position`/`offset`/`snapToWindow` on `anchored`, `priority` on
 `deferred`, and `group`, `groupOf`, `tooltip`, `dragData`, `focusable`,
 `tabIndex`, `autofocus`, `occlude`, `scrollTop` and `scrollLeft` on any element.

@@ -145,7 +145,9 @@ where
             element = element.tab_index(index as isize);
         }
     }
-    if let Some(scroll) = node.scroll.as_ref() {
+    // A virtualised list keeps its own scroll state, and attaching a generic
+    // handle on top of it fights with the offset it maintains internally.
+    if let Some(scroll) = node.scroll.as_ref().filter(|_| node.tag != "uniform-list") {
         // gpui counts a downward scroll as a negative offset; the props read the
         // way the web does, so the sign is flipped here rather than in JS.
         let offset = Point {
@@ -597,6 +599,11 @@ fn build_input(node: &Node, tree: &Shared) -> AnyElement {
     finish(element.child(TextElement { input: state }), node)
 }
 
+/// The row gpui renders to measure the height of every other row. It is
+/// `UniformList::item_to_measure_index`, which is zero unless
+/// `with_width_from_item` changes it, and this renderer never does.
+const MEASURE_INDEX: usize = 0;
+
 fn build_uniform_list(node: &Node, tree: &Shared) -> AnyElement {
     let count = node.prop_usize("count").unwrap_or(0);
     let start = node.prop_usize("start").unwrap_or(0);
@@ -605,15 +612,24 @@ fn build_uniform_list(node: &Node, tree: &Shared) -> AnyElement {
     let id = node.id;
     let rows = tree.clone();
 
-    let element = uniform_list(
+    let mut element = uniform_list(
         node.element_id.clone(),
         count,
         move |range, _window, _cx| {
-            // gpui asks for a range while it is laying out, and the answer
-            // cannot wait for a round trip. The rows JavaScript has already
-            // rendered are used as they are, and the request is forwarded so the
-            // next frame has the rest — a fast scroll shows one frame of catch-up.
-            if announce {
+            // Before laying the list out, gpui measures one row to learn the row
+            // height — from `request_layout` and again from `prepaint`, both
+            // times as exactly `MEASURE_INDEX..MEASURE_INDEX + 1`. Those are not
+            // viewport requests. Reporting them as one told JavaScript the
+            // viewport had jumped back to the top of the list on every frame,
+            // which is what emptied the list while scrolling.
+            let measuring = range.start == MEASURE_INDEX && range.end == MEASURE_INDEX + 1;
+
+            // gpui asks for the visible range while it is laying out, and the
+            // answer cannot wait for a round trip. The rows JavaScript has
+            // already rendered are used as they are, and the request is
+            // forwarded so the next frame has the rest — a fast scroll shows one
+            // frame of catch-up.
+            if announce && !measuring {
                 let wanted = (range.start, range.end);
                 let stale = rows
                     .borrow()
@@ -631,19 +647,41 @@ fn build_uniform_list(node: &Node, tree: &Shared) -> AnyElement {
                     );
                 }
             }
+
             range
                 .map(|index| {
-                    match index
+                    let child = index
                         .checked_sub(start)
-                        .and_then(|offset| children.get(offset))
-                    {
+                        .and_then(|offset| children.get(offset));
+                    match child {
                         Some(child) => build(&rows, *child),
+                        // Every row's position is derived from the measured
+                        // height, so the measurement must never come back empty.
+                        // Once the list is scrolled, row 0 is no longer rendered,
+                        // and any row that is will do.
+                        None if measuring => match children.first() {
+                            Some(child) => build(&rows, *child),
+                            None => div().into_any_element(),
+                        },
                         None => div().into_any_element(),
                     }
                 })
                 .collect::<Vec<_>>()
         },
     );
+
+    if let Some(scroll) = node.list_scroll.as_ref() {
+        element = element.track_scroll(scroll);
+        // Only on change: scrolling to the same row on every repaint would pin
+        // the list there and fight the user trying to scroll away from it.
+        let requested = node.prop_usize("scrollToItem");
+        if requested != node.last_scroll_to.get() {
+            node.last_scroll_to.set(requested);
+            if let Some(index) = requested {
+                scroll.scroll_to_item(index, gpui::ScrollStrategy::Top);
+            }
+        }
+    }
 
     finish(
         decorate(element.id(node.element_id.clone()), node, tree),

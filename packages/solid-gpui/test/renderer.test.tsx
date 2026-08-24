@@ -228,7 +228,7 @@ describe("newer elements", () => {
         <anchored anchor="top-right" offset={{ x: 4, y: 8 }} snapToWindow snapMargin={12} />
         <deferred priority={3} />
         <input value="hi" placeholder="type here" />
-        <uniform-list count={500} start={40} onRange={() => {}} />
+        <uniform-list count={500} start={40} scrollToItem={120} onRange={() => {}} />
       </div>
     ));
     expect(created(host, "anchored")?.[3]).toMatchObject({
@@ -242,6 +242,7 @@ describe("newer elements", () => {
     expect(created(host, "uniform-list")?.[3]).toMatchObject({
       count: 500,
       start: 40,
+      scrollToItem: 120,
       "@range": true,
     });
   });

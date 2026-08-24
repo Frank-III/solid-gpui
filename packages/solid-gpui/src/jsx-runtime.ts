@@ -150,6 +150,8 @@ export interface UniformListProps extends ElementProps {
   start?: number;
   /** Asks for the rows the viewport needs; render them and update `start`. */
   onRange?: (event: RangeEvent) => void;
+  /** Scrolls this row to the top of the viewport. */
+  scrollToItem?: number;
 }
 
 /**
