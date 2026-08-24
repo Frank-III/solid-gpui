@@ -77,10 +77,22 @@ pnpm build:host            # builds the Rust host (needs a Rust toolchain)
 pnpm example:counter
 ```
 
-The Rust host is fetched from the Zed repository, so the first `build:host` takes
-a while. The JavaScript side finds the binary automatically when it sits at
-`crates/solid-gpui-host/target/release/solid-gpui-host`; otherwise set
-`SOLID_GPUI_HOST` to its path, or put `solid-gpui-host` on `PATH`.
+The Rust host is fetched from the Zed repository, so the first `build:host`
+clones several gigabytes and then compiles for a while.
+
+On macOS the Xcode Command Line Tools are enough — the host enables gpui's
+`runtime_shaders` feature, which compiles the Metal shaders at startup instead of
+calling `xcrun metal`, a tool that only ships with the full Xcode. It also
+enables `font-kit`: without it gpui installs a no-op text system and draws no
+text at all.
+
+The JavaScript side finds the binary by walking up from the working directory
+looking for `crates/solid-gpui-host/target/{release,debug}/solid-gpui-host`, so
+running an example from its own folder works. Otherwise set `SOLID_GPUI_HOST` to
+its path, or put `solid-gpui-host` on `PATH`.
+
+The host installs a logger, so gpui's own warnings reach stderr; `RUST_LOG=debug`
+turns up the detail.
 
 ### Without a Rust toolchain
 
@@ -160,6 +172,10 @@ message naming the fix rather than letting it fail silently.
 | `text` | gpui `div()` | Same element, named for intent. |
 | `img` | gpui `img()` | Takes `src` — a file path or an `http(s)` URL. |
 | `svg` | gpui `svg()` | Takes `path`; painted in the current text colour. |
+
+Every element defaults to `display: flex`, not to gpui's own `display: block`.
+That is what makes `flexDirection`, `alignItems`, `justifyContent` and `gap`
+meaningful on a bare `<div>`; set `display` explicitly to opt out.
 
 Text is written as ordinary JSX children. Adjacent text nodes are concatenated by
 the host, so `<div>#{index() + 1}</div>` lays out as one run of text rather than

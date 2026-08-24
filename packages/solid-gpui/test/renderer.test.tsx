@@ -40,6 +40,15 @@ describe("mounting", () => {
     expect(host.batches[0]).toEqual([[Op.OpenWindow, { title: "test", width: 100, height: 100 }]]);
   });
 
+  it("gives the window root a definite size", async () => {
+    const host = await mount(() => <div />);
+    const root = host.tree.root;
+    expect(root).not.toBeNull();
+    expect(host.tree.nodes.get(root!)?.props["style"]).toEqual({
+      size: { width: { k: "pct", v: 1 }, height: { k: "pct", v: 1 } },
+    });
+  });
+
   it("builds the tree the markup describes", async () => {
     const host = await mount(() => (
       <div>

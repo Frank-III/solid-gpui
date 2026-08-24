@@ -17,7 +17,8 @@ use std::rc::Rc;
 use std::sync::{Mutex, OnceLock};
 
 use gpui::{
-    App, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
+    App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    KeyDownEvent,
     KeyUpEvent, ParentElement, Render, Styled, TitlebarOptions, Window, WindowBackgroundAppearance,
     WindowBounds, WindowOptions, div, point, px, size,
 };
@@ -76,12 +77,12 @@ impl Root {
 }
 
 impl Render for Root {
-    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.focused_once {
             // The root owns keyboard focus so that key listeners anywhere in the
             // tree receive events; gpui only delivers them along the focus path.
             self.focused_once = true;
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
         }
 
         let tree = self.tree.borrow();
@@ -91,6 +92,8 @@ impl Render for Root {
         let up_tree = self.tree.clone();
         div()
             .track_focus(&self.focus)
+            .flex()
+            .flex_col()
             .size(gpui::relative(1.))
             .on_key_down(move |event: &KeyDownEvent, _window, _cx| {
                 let payload = render::key_payload(event);
@@ -198,6 +201,12 @@ fn apply_batch(
 }
 
 fn main() {
+    // gpui reports real problems through `log` — a missing text system, a
+    // shader that would not compile — and says nothing without a logger.
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .target(env_logger::Target::Stderr)
+        .init();
+
     let (sender, receiver) = async_channel::unbounded::<Vec<Op>>();
 
     std::thread::spawn(move || {

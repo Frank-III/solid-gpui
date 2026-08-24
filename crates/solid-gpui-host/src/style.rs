@@ -8,7 +8,7 @@
 use gpui::{
     AbsoluteLength, AlignContent, AlignItems, AlignSelf, BorderStyle, BoxShadow, CursorStyle,
     DefiniteLength, Display, FlexDirection, FlexWrap, FontStyle, FontWeight, GridTemplate,
-    GridTemplateMinSize, Hsla, JustifyContent, Length, Overflow, Pixels, Position,
+    GridTemplateMinSize, Hsla, JustifyContent, Length, Overflow, Position,
     SharedString, StrikethroughStyle, StyleRefinement, TextAlign, TextOverflow, UnderlineStyle,
     Visibility, WhiteSpace, point, px, relative, rems,
 };
@@ -54,14 +54,6 @@ impl WireLength {
             WireLength::Pixels(value) => AbsoluteLength::Pixels(px(value)),
             WireLength::Rems(value) => AbsoluteLength::Rems(rems(value)),
             WireLength::Fraction(_) | WireLength::Auto => AbsoluteLength::Pixels(px(0.)),
-        }
-    }
-
-    pub fn to_pixels(self) -> Pixels {
-        match self {
-            WireLength::Pixels(value) => px(value),
-            WireLength::Rems(value) => px(value * 16.),
-            WireLength::Fraction(_) | WireLength::Auto => px(0.),
         }
     }
 }

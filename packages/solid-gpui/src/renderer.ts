@@ -130,11 +130,19 @@ export const {
   },
 });
 
-/** Creates the node that backs the window's root element. */
+/**
+ * Creates the node that backs the window's root element.
+ *
+ * It is styled to fill the window rather than left bare: an auto-sized root has
+ * no definite height, so a `height: "100%"` on the application's own outermost
+ * element would resolve against nothing and collapse the whole tree.
+ */
 export function createRootNode(): GpuiNode {
   const node = createNode(ELEMENT, "div", "");
+  const style = normalizeStyle({ width: "100%", height: "100%" });
   session.register(node);
-  session.push([Op.CreateElement, node.id, "div", {}]);
+  session.push([Op.CreateElement, node.id, "div", { style }]);
+  node.props.set("style", style);
   session.push([Op.SetRoot, node.id]);
   return node;
 }

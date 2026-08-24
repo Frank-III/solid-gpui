@@ -29,9 +29,12 @@ pub struct Node {
     pub children: Vec<NodeId>,
     pub props: HashMap<String, Value>,
     pub style: StyleRefinement,
-    pub hover_style: Option<StyleRefinement>,
-    pub active_style: Option<StyleRefinement>,
-    pub group_hover_style: Option<StyleRefinement>,
+    // State styles stay in their wire form: gpui hands the closure a
+    // `StyleRefinement` to merge into, and merging means re-running the same
+    // field-by-field assignment `style::apply` already does.
+    pub hover_style: Option<WireStyle>,
+    pub active_style: Option<WireStyle>,
+    pub group_hover_style: Option<WireStyle>,
     pub listeners: HashSet<String>,
     pub element_id: ElementId,
 }
@@ -59,10 +62,6 @@ impl Node {
         self.props.get(key).and_then(Value::as_str)
     }
 
-    pub fn prop_bool(&self, key: &str) -> bool {
-        self.props.get(key).and_then(Value::as_bool).unwrap_or(false)
-    }
-
     pub fn listens_to(&self, event: &str) -> bool {
         self.listeners.contains(event)
     }
@@ -76,21 +75,23 @@ pub struct Tree {
     pub dirty: bool,
 }
 
-fn parse_style(value: &Value) -> Option<StyleRefinement> {
+fn parse_style(value: &Value) -> Option<WireStyle> {
     if value.is_null() {
         return None;
     }
     match serde_json::from_value::<WireStyle>(value.clone()) {
-        Ok(wire) => {
-            let mut refinement = StyleRefinement::default();
-            style::apply(&wire, &mut refinement);
-            Some(refinement)
-        }
+        Ok(wire) => Some(wire),
         Err(error) => {
             crate::emit_log(format!("ignoring unparsable style: {error}"));
             None
         }
     }
+}
+
+fn refine(wire: &WireStyle) -> StyleRefinement {
+    let mut refinement = StyleRefinement::default();
+    style::apply(wire, &mut refinement);
+    refinement
 }
 
 impl Tree {
@@ -121,7 +122,9 @@ impl Tree {
             return;
         };
         match (key, parsed) {
-            ("style", Some(parsed)) => node.style = parsed.unwrap_or_default(),
+            ("style", Some(parsed)) => {
+                node.style = parsed.as_ref().map(refine).unwrap_or_default()
+            }
             ("hoverStyle", Some(parsed)) => node.hover_style = parsed,
             ("activeStyle", Some(parsed)) => node.active_style = parsed,
             ("groupHoverStyle", Some(parsed)) => node.group_hover_style = parsed,

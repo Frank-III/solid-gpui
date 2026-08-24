@@ -5,8 +5,9 @@
 //! the event to JavaScript and return.
 
 use gpui::{
-    AnyElement, App, ClickEvent, Context, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render, ScrollDelta,
+    AnyElement, AppContext, ClickEvent, Context, Display, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    Render, ScrollDelta,
     ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyleRefinement, Window,
     div, hsla, img, px, svg,
 };
@@ -175,7 +176,7 @@ where
         });
     }
     if node.listens_to("mouseExit") {
-        element = element.on_mouse_exit(move |event: &MouseMoveEvent, _window, _cx| {
+        element = element.on_mouse_exit(move |event: &MouseExitEvent, _window, _cx| {
             crate::emit_event(
                 id,
                 "mouseExit",
@@ -220,7 +221,7 @@ pub fn build(tree: &Tree, id: NodeId) -> AnyElement {
     };
 
     if node.kind == NodeKind::Text {
-        return div().child(node.text.clone()).into_any_element();
+        return div().flex().child(node.text.clone()).into_any_element();
     }
 
     match node.tag.as_str() {
@@ -235,6 +236,15 @@ pub fn build(tree: &Tree, id: NodeId) -> AnyElement {
         }
         _ => {
             let mut element = decorate(div().id(node.element_id.clone()), node);
+            // gpui's `Style::default()` is `display: block`, which is why
+            // hand-written gpui code calls `.flex()` on nearly every div. The
+            // element model this renderer exposes is flexbox — `flexDirection`,
+            // `alignItems`, `justifyContent` and `gap` are documented to work on
+            // a bare `<div>` — so anything that did not ask for another display
+            // gets flex. Block layout silently ignores all of those properties.
+            if element.style().display.is_none() {
+                element.style().display = Some(Display::Flex);
+            }
             // Consecutive text nodes are concatenated: `<div>#{n}</div>` compiles
             // to two adjacent text nodes, and emitting them as two children
             // would lay them out as two boxes instead of one run of text.

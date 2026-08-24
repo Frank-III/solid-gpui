@@ -17,11 +17,28 @@ path = "src/main.rs"
 # `cargo update` land breaking changes without a diff to point at.
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", rev = "d9ad6aff67e47de43abb270d22de75dd950f1b48" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "d9ad6aff67e47de43abb270d22de75dd950f1b48" }
 async-channel = "2"
+# gpui logs through the `log` facade; without a logger installed its warnings —
+# including the one that says no text will be rendered — go nowhere.
+env_logger = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [profile.release]
 opt-level = 3
 lto = "thin"
+
+# `gpui_platform` defaults to no features, and two of them are not optional here.
+#
+# `font-kit` selects the real text system; without it the platform installs
+# `NoopTextSystem` and nothing text-shaped is ever drawn.
+#
+# `runtime_shaders` compiles the Metal shaders when the application starts
+# rather than with `xcrun metal` during the build. That tool ships with the full
+# Xcode, not with the Command Line Tools, so the feature is what lets this build
+# on a machine that only has the latter. It costs a little startup time.
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "d9ad6aff67e47de43abb270d22de75dd950f1b48", features = ["font-kit", "runtime_shaders"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "d9ad6aff67e47de43abb270d22de75dd950f1b48", features = ["font-kit", "wayland", "x11"] }

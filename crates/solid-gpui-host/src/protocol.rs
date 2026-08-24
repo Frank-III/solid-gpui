@@ -146,16 +146,6 @@ impl Op {
     }
 }
 
-/// Modifier key state as sent to JavaScript.
-#[derive(Debug, Serialize)]
-pub struct WireModifiers {
-    pub control: bool,
-    pub alt: bool,
-    pub shift: bool,
-    pub platform: bool,
-    pub function: bool,
-}
-
 #[derive(Debug, Serialize)]
 #[serde(tag = "t")]
 pub enum Outgoing {

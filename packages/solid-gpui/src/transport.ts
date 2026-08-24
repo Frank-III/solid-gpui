@@ -7,7 +7,7 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { HostMessage, Operation } from "./protocol.js";
 
 /**
@@ -41,18 +41,29 @@ const DEV_BUILD_PATHS = [
  * Finds the host binary. An explicit path or `SOLID_GPUI_HOST` always wins;
  * otherwise a locally built binary is preferred over one on `PATH` so that
  * working inside this repository does the obvious thing.
+ *
+ * The search walks up from the working directory, because an application is
+ * usually run from its own folder rather than from the root of the checkout
+ * that holds the build.
  */
 export function resolveHostPath(explicit?: string): string {
   const candidate = explicit ?? process.env["SOLID_GPUI_HOST"];
   if (candidate) {
-    if (!existsSync(candidate)) {
+    const path = resolve(process.cwd(), candidate);
+    if (!existsSync(path)) {
       throw new Error(`solid-gpui: host binary not found at ${candidate}`);
     }
-    return candidate;
+    return path;
   }
-  for (const relative of DEV_BUILD_PATHS) {
-    const path = resolve(process.cwd(), relative);
-    if (existsSync(path)) return path;
+  let directory = process.cwd();
+  for (;;) {
+    for (const relative of DEV_BUILD_PATHS) {
+      const path = resolve(directory, relative);
+      if (existsSync(path)) return path;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
   }
   return "solid-gpui-host";
 }
