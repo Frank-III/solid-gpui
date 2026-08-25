@@ -38,7 +38,7 @@ export type { SessionOptions } from "./session.js";
 export { Transport, resolveHostPath } from "./transport.js";
 export type { TransportOptions, HostConnection } from "./transport.js";
 export type { GpuiNode } from "./node.js";
-export type { WindowOptions, Modifiers } from "./protocol.js";
+export type { ClipboardEntry, PathPromptOptions, WindowOptions, Modifiers } from "./protocol.js";
 export type {
   ElementProps,
   ImageProps,
@@ -48,6 +48,8 @@ export type {
   DeferredProps,
   InputProps,
   UniformListProps,
+  CodeHighlight,
+  CodeSurfaceProps,
   GpuiChild,
   GpuiChildArray,
   GpuiRenderedElement,
@@ -71,6 +73,12 @@ export { CanvasContext } from "./canvas.js";
 export type { Draw, DrawCommand, Vertex } from "./canvas.js";
 export { normalizeStyle, normalizeAnimation } from "./style.js";
 export type { GpuiStyle, ShadowInput, Cursor, AnimationSpec, Easing } from "./style.js";
+
+/** Opens the host platform's native file/folder picker. */
+export const promptForPaths = (options: import("./protocol.js").PathPromptOptions = {}) => session.promptForPaths(options);
+
+/** Reads text, file paths, and images from the host platform clipboard. */
+export const readClipboard = () => session.readClipboard();
 
 export interface RenderOptions extends Omit<SessionOptions, "window">, WindowOptions {}
 

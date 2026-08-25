@@ -1,0 +1,28 @@
+{
+  "name": "@solid-gpui/opencode-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "start": "vite build && node dist/app.js",
+    "trace": "vite build && SOLID_GPUI_HOST=../../tools/mock-host.mjs SOLID_GPUI_MOCK_DUMP=1 node dist/app.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "1.18.21",
+    "@xterm/headless": "^6.0.0",
+    "clipboardy": "^4.0.0",
+    "effect": "4.0.0-rc.111",
+    "shiki": "^3.12.2",
+    "solid-gpui": "workspace:*",
+    "solid-js": "2.0.0-rc.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

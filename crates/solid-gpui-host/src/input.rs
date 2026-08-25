@@ -94,6 +94,8 @@ pub struct InputState {
     pub multiline: bool,
     /// The height an empty multi-line field starts at, in lines.
     pub rows: usize,
+    /// Whether plain Enter inserts a newline instead of reaching the app.
+    pub newline_on_enter: bool,
     selected_range: Range<usize>,
     selection_reversed: bool,
     marked_range: Option<Range<usize>>,
@@ -117,6 +119,7 @@ impl InputState {
             placeholder: SharedString::default(),
             multiline: false,
             rows: 1,
+            newline_on_enter: true,
             selected_range: 0..0,
             selection_reversed: false,
             marked_range: None,
@@ -136,8 +139,18 @@ impl InputState {
         }
         self.content = SharedString::from(value.to_owned());
         let length = self.content.len();
-        self.selected_range = self.selected_range.start.min(length)..self.selected_range.end.min(length);
+        self.selected_range =
+            self.selected_range.start.min(length)..self.selected_range.end.min(length);
         self.marked_range = None;
+    }
+
+    /// Applies controlled selection props, expressed in JavaScript UTF-16
+    /// offsets, without reporting a user edit back to the application.
+    pub fn set_selection(&mut self, start: usize, end: usize) {
+        let start = self.offset_from_utf16(start);
+        let end = self.offset_from_utf16(end);
+        self.selected_range = start.min(end)..start.max(end);
+        self.selection_reversed = end < start;
     }
 
     fn selection_utf16(&self) -> (usize, usize) {
@@ -154,6 +167,7 @@ impl InputState {
                 "value": self.content.to_string(),
                 "selectionStart": start,
                 "selectionEnd": end,
+                "composing": self.marked_range.is_some(),
             }),
         );
     }
@@ -240,10 +254,10 @@ impl InputState {
         }
     }
 
-    /// The return key. A single-line field ignores it, so the keystroke reaches
-    /// whatever else the application has bound it to.
+    /// The return key. A single-line field, or a multiline field configured to
+    /// propagate Enter, ignores it so the keystroke reaches the application.
     pub fn newline(&mut self, _: &Newline, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.multiline {
+        if !self.multiline || !self.newline_on_enter {
             return;
         }
         self.replace_text_in_range(None, "\n", window, cx);
@@ -325,7 +339,12 @@ impl InputState {
         self.is_selecting = false;
     }
 
-    pub fn on_mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_mouse_move(
+        &mut self,
+        event: &MouseMoveEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.is_selecting {
             self.select_to(self.index_for_mouse_position(event.position), cx);
         }
@@ -548,7 +567,8 @@ impl EntityInputHandler for InputState {
             .unwrap_or(self.selected_range.clone());
 
         self.content =
-            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..]).into();
+            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
+                .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
         self.edited();
@@ -570,7 +590,8 @@ impl EntityInputHandler for InputState {
             .unwrap_or(self.selected_range.clone());
 
         self.content =
-            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..]).into();
+            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
+                .into();
         self.marked_range = if new_text.is_empty() {
             None
         } else {

@@ -78,8 +78,43 @@ jobs:
           name: host-${{ matrix.target }}
           path: dist/npm/${{ matrix.target }}
 
-  publish:
+  desktop:
+    name: desktop (${{ matrix.target }})
     needs: host
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-14
+          - target: darwin-x64
+            runner: macos-13
+          - target: linux-x64
+            runner: ubuntu-latest
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @solid-gpui/opencode-desktop build
+      - uses: actions/download-artifact@v4
+        with:
+          name: host-${{ matrix.target }}
+          path: dist/host
+      - name: Assemble desktop bundle
+        run: node scripts/package-desktop.mjs --target ${{ matrix.target }} --binary dist/host/solid-gpui-host
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-solid-gpui-${{ matrix.target }}
+          path: dist/desktop/opencode-solid-gpui-${{ matrix.target }}.tar.gz
+
+  publish:
+    needs: [host, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: read

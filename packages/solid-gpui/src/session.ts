@@ -6,7 +6,7 @@
  */
 
 import { flush as flushSolid } from "solid-js";
-import { Op, type HostMessage, type Operation, type WindowOptions } from "./protocol.js";
+import { Op, type ClipboardEntry, type HostMessage, type Operation, type PathPromptOptions, type WindowOptions } from "./protocol.js";
 import { Transport, type HostConnection, type TransportOptions } from "./transport.js";
 import type { GpuiNode } from "./node.js";
 
@@ -61,6 +61,8 @@ export class Session {
     transport.onMessage((message) => this.#receive(message));
     transport.onExit(() => {
       this.#transport = null;
+      for (const pending of this.#pending.values()) pending.reject(new Error("solid-gpui: the host exited"));
+      this.#pending.clear();
       for (const listener of this.#closeListeners) listener();
     });
     if (options.onClose) this.#closeListeners.add(options.onClose);
@@ -81,13 +83,14 @@ export class Session {
         const node = this.#nodes.get(message.id);
         const handler = node?.handlers.get(message.n);
         if (!handler) return;
-        // Events whose payload is a bare value arrive wrapped as `{value}`;
-        // some carry nothing at all, so neither shape can be assumed.
-        const detail = message.d;
-        const payload =
-          detail !== null && typeof detail === "object" && "value" in detail
-            ? (detail as { value: unknown }).value
-            : detail;
+        // Hover is the scalar event encoded in an object by the host. Input
+        // events legitimately contain a `value` field and must stay intact.
+        const payload = message.n === "hover"
+          && message.d !== null
+          && typeof message.d === "object"
+          && "value" in message.d
+          ? (message.d as { value: unknown }).value
+          : message.d;
         (handler as (payload: unknown) => void)(payload);
         // Event handlers write signals; run Solid's effects now so the
         // resulting mutations travel back in a single batch.
@@ -160,6 +163,16 @@ export class Session {
       this.#scheduled = false;
       this.flush();
     });
+  }
+
+  async promptForPaths(options: PathPromptOptions = {}): Promise<string[]> {
+    const value = await this.call<unknown>("dialog.openFile", options);
+    return Array.isArray(value) ? value.filter((path): path is string => typeof path === "string") : [];
+  }
+
+  async readClipboard(): Promise<ClipboardEntry[]> {
+    const value = await this.call<unknown>("clipboard.read");
+    return Array.isArray(value) ? value as ClipboardEntry[] : [];
   }
 
   /** Emits `Drop` for every node still detached at the end of a batch. */

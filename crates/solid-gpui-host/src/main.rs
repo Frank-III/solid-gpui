@@ -7,6 +7,7 @@
 //! back to JavaScript is a single JSON line on stdout.
 
 mod canvas;
+mod code_surface;
 mod commands;
 mod input;
 mod keys;
@@ -23,8 +24,8 @@ use std::rc::Rc;
 use std::sync::{Mutex, OnceLock};
 
 use gpui::{
-    App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    KeyDownEvent, KeyUpEvent, ParentElement, Render, Styled, TitlebarOptions, Window,
+    App, AppContext, Bounds, Context, Entity, ExternalPaths, FocusHandle, InteractiveElement,
+    IntoElement, KeyDownEvent, KeyUpEvent, ParentElement, Render, Styled, TitlebarOptions, Window,
     WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowOptions, div, point, px, size,
 };
 use gpui_platform::application;
@@ -104,14 +105,16 @@ impl Root {
         }
     }
 
-    /// Honours `autofocus` the first time a node carrying it is rendered.
+    /// Honours one-shot `autofocus` and controlled `focused` requests.
     fn apply_autofocus(&mut self, window: &mut Window, cx: &mut App) {
         let pending: Vec<FocusHandle> = {
             let tree = self.tree.borrow();
             tree.focusables()
                 .filter_map(|(id, focus)| {
                     let node = tree.get(id)?;
-                    if node.prop_bool("autofocus") && !node.focused_once.get() {
+                    if node.prop_bool("focused")
+                        || (node.prop_bool("autofocus") && !node.focused_once.get())
+                    {
                         node.focused_once.set(true);
                         Some(focus.clone())
                     } else {
@@ -186,6 +189,7 @@ impl Render for Root {
 
         let down_tree = self.tree.clone();
         let up_tree = self.tree.clone();
+        let drop_tree = self.tree.clone();
         div()
             .track_focus(&self.focus)
             .flex()
@@ -198,6 +202,22 @@ impl Render for Root {
             .on_key_up(move |event: &KeyUpEvent, _window, _cx| {
                 let payload = render::keystroke_json(&event.keystroke, false);
                 render::dispatch_key(&up_tree.borrow(), "keyUp", &payload);
+            })
+            .on_drop(move |paths: &ExternalPaths, _window, _cx| {
+                let payload = serde_json::json!({
+                    "paths": paths
+                        .paths()
+                        .iter()
+                        .map(|path| path.to_string_lossy())
+                        .collect::<Vec<_>>()
+                });
+                for node in drop_tree
+                    .borrow()
+                    .nodes()
+                    .filter(|node| node.listens_to("dropFiles"))
+                {
+                    emit_event(node.id, "dropFiles", payload.clone());
+                }
             })
             .children(content)
     }
@@ -356,7 +376,11 @@ fn main() {
         // Every binding an element declares resolves to this one action, which
         // names the element that asked for it.
         cx.on_action(|action: &keys::Bound, _cx| {
-            emit_event(action.node, "keys", serde_json::json!({ "index": action.index }));
+            emit_event(
+                action.node,
+                "keys",
+                serde_json::json!({ "index": action.index }),
+            );
         });
         cx.on_action(|action: &menu::Selected, _cx| {
             emit_event(action.node, "select", Value::Null);

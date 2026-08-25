@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createSignal, flush } from "solid-js";
-import { For, Show, render, type Dispose } from "solid-gpui";
+import { For, Show, promptForPaths, readClipboard, render, type Dispose } from "solid-gpui";
 import { Op } from "../src/protocol.js";
 import { session } from "../src/session.js";
 import { FakeHost, connectFake } from "./fake-host.js";
@@ -83,6 +83,30 @@ describe("mounting", () => {
   });
 });
 
+describe("platform requests", () => {
+  it("round-trips a native path prompt through the host", async () => {
+    const host = await mount(() => <div />);
+    const pending = promptForPaths({ files: true, multiple: true, prompt: "Attach files" });
+    const operation = host.operations.find((item) => item[0] === Op.Call);
+    expect(operation).toEqual([Op.Call, expect.any(Number), "dialog.openFile", { files: true, multiple: true, prompt: "Attach files" }]);
+    host.emit({ t: "r", i: operation![1] as number, d: ["/tmp/a.ts", "/tmp/b.png"] });
+    await expect(pending).resolves.toEqual(["/tmp/a.ts", "/tmp/b.png"]);
+  });
+
+  it("returns structured clipboard entries", async () => {
+    const host = await mount(() => <div />);
+    const pending = readClipboard();
+    const operation = host.operations.find((item) => item[0] === Op.Call);
+    expect(operation).toEqual([Op.Call, expect.any(Number), "clipboard.read", null]);
+    const entries = [
+      { type: "paths" as const, paths: ["/tmp/image.png"] },
+      { type: "image" as const, mime: "image/png", data: "iVBORw==" },
+    ];
+    host.emit({ t: "r", i: operation![1] as number, d: entries });
+    await expect(pending).resolves.toEqual(entries);
+  });
+});
+
 describe("reactivity", () => {
   it("updates text in place when a signal changes", async () => {
     const [count, setCount] = createSignal(0);
@@ -110,6 +134,50 @@ describe("reactivity", () => {
     expect(target).not.toBeNull();
     host.event(target!, "click");
     expect(host.tree.print()).toContain('"1"');
+  });
+
+  it("supports controlled native input events", async () => {
+    let value = "";
+    const host = await mount(() => (
+      <input
+        value="hello"
+        selectionStart={5}
+        selectionEnd={5}
+        focused
+        onInput={(event) => { value = event.value; }}
+      />
+    ));
+    const target = host.tree.findByListener("input");
+    expect(target).not.toBeNull();
+    host.event(target!, "input", { value: "hello 世界", selectionStart: 8, selectionEnd: 8, composing: true });
+    expect(value).toBe("hello 世界");
+  });
+
+  it("serializes and dispatches a controlled code surface", async () => {
+    let selection = [0, 0];
+    const highlights = [{ start: 0, end: 5, color: "#ff0000", fontStyle: 2 }];
+    const host = await mount(() => (
+      <codeSurface
+        value="const value = 1"
+        selectionStart={0}
+        selectionEnd={5}
+        highlights={highlights}
+        lineNumbers
+        scrollToLine={0}
+        onSelectionChange={(event) => { selection = [event.selectionStart, event.selectionEnd]; }}
+      />
+    ));
+    expect(created(host, "codeSurface")?.[3]).toEqual({
+      value: "const value = 1",
+      selectionStart: 0,
+      selectionEnd: 5,
+      highlights,
+      lineNumbers: true,
+      scrollToLine: 0,
+      "@selectionChange": true,
+    });
+    host.event(host.tree.findByListener("selectionChange")!, "selectionChange", { selectionStart: 6, selectionEnd: 11 });
+    expect(selection).toEqual([6, 11]);
   });
 
   it("passes a bare event value straight to the listener", async () => {
@@ -396,10 +464,11 @@ describe("newer elements", () => {
   });
 
   it("sends a multi-line field's own props", async () => {
-    const host = await mount(() => <input multiline rows={4} value={"a\nb"} />);
+    const host = await mount(() => <input multiline rows={4} enterBehavior="propagate" value={"a\nb"} />);
     expect(created(host, "input")?.[3]).toMatchObject({
       multiline: true,
       rows: 4,
+      enterBehavior: "propagate",
       value: "a\nb",
     });
   });

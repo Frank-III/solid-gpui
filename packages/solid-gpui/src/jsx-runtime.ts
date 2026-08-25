@@ -17,6 +17,7 @@ import type {
   ClickEvent,
   DragStartEvent,
   DropEvent,
+  DropFilesEvent,
   HoverEvent,
   InputEvent,
   KeyEvent,
@@ -28,6 +29,7 @@ import type {
   ResizeEvent,
   ScrollEvent,
   ScrollWheelEvent,
+  SelectionChangeEvent,
 } from "./events.js";
 
 export interface ElementProps {
@@ -99,6 +101,8 @@ export interface ElementProps {
    */
   onKeyDown?: (event: KeyEvent) => void;
   onKeyUp?: (event: KeyEvent) => void;
+  /** Receives native filesystem paths dropped into the window. */
+  onDropFiles?: (event: DropFilesEvent) => void;
 
   /**
    * Keystrokes this element handles, as gpui spells them: `"cmd-k"`,
@@ -165,6 +169,16 @@ export interface InputProps extends Omit<ElementProps, "children"> {
   multiline?: boolean;
   /** The fewest lines a `multiline` field occupies. Defaults to one. */
   rows?: number;
+  /**
+   * What plain Enter does in a multiline field. `"newline"` is the default;
+   * `"propagate"` leaves it for an application-level key handler.
+   */
+  enterBehavior?: "newline" | "propagate";
+  /** Controlled selection offsets in UTF-16 code units. */
+  selectionStart?: number;
+  selectionEnd?: number;
+  /** Requests platform input focus for this element. */
+  focused?: boolean;
   /** Fires on every edit. */
   onInput?: (event: InputEvent) => void;
   /** Fires when the element loses focus after an edit. */
@@ -337,6 +351,29 @@ export interface SpanProps {
   children?: string | number | GpuiChild;
 }
 
+/** A UTF-16 range styled by the native shaped-text surface. */
+export interface CodeHighlight {
+  start: number;
+  end: number;
+  color?: string;
+  background?: string;
+  /** Shiki-compatible bits: italic 1, bold 2, underline 4. */
+  fontStyle?: number;
+}
+
+export interface CodeSurfaceProps extends ElementProps {
+  /** Canonical read-only document text. */
+  value: string;
+  /** Optional controlled selection offsets in UTF-16 code units. */
+  selectionStart?: number;
+  selectionEnd?: number;
+  highlights?: CodeHighlight[];
+  lineNumbers?: boolean;
+  /** Zero-based line to reveal in the viewport. */
+  scrollToLine?: number;
+  onSelectionChange?: (event: SelectionChangeEvent) => void;
+}
+
 /**
  * What a component may return. This mirrors Solid's own `Element` union with
  * `GpuiNode` in the place of a DOM node, so control-flow components typecheck
@@ -406,5 +443,7 @@ export namespace JSX {
     item: MenuItemProps;
     /** A dividing line between menu items. */
     separator: Record<string, never>;
+    /** A read-only, selectable and pixel-scrollable shaped text surface. */
+    codeSurface: CodeSurfaceProps;
   }
 }

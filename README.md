@@ -62,6 +62,7 @@ applies operations and builds elements.
 | [crates/solid-gpui-host/](crates/solid-gpui-host/) | The Rust host binary that owns gpui and the window |
 | [examples/counter/](examples/counter/) | The smallest thing that runs: clicks, hover styles, a keyed list |
 | [examples/showcase/](examples/showcase/) | Every element at once: lists, rich text, canvas, scrollbars, text input |
+| [apps/opencode-desktop/](apps/opencode-desktop/) | A standalone Node/Solid OpenCode desktop client built on the library |
 | [tools/mock-host.mjs](tools/mock-host.mjs) | A host that speaks the protocol and prints the tree instead of drawing it |
 
 The library is bundled with [tsdown](https://tsdown.dev) and tested with
@@ -76,6 +77,7 @@ pnpm build                 # builds the JavaScript package with tsdown
 pnpm test                  # runs the Vitest suite
 pnpm build:host            # builds the Rust host (needs a Rust toolchain)
 pnpm example:counter
+pnpm opencode:desktop
 ```
 
 The Rust host is fetched from the Zed repository, so the first `build:host`
@@ -85,6 +87,21 @@ Command Line Tools are enough.
 A project of your own needs the JSX transform and two TypeScript options.
 [docs/setup.md](docs/setup.md) covers those, how the host binary is found, and
 how to develop without a Rust toolchain at all.
+
+The desktop application uses `@opencode-ai/sdk/v2`. By default it starts
+`opencode serve` on `127.0.0.1:4096`, so the `opencode` CLI must be installed and
+available on `PATH`. It can connect to an existing local or remote server instead:
+
+```sh
+OPENCODE_URL=http://127.0.0.1:4096 \
+OPENCODE_DIRECTORY=/path/to/project \
+OPENCODE_PASSWORD=optional-server-password \
+pnpm opencode:desktop
+```
+
+Set `OPENCODE_NO_SPAWN=1` to connect to the default port without starting a child
+service. See [the application README](apps/opencode-desktop/README.md) for its
+product surface, keyboard shortcuts, and architecture.
 
 ## Documentation
 

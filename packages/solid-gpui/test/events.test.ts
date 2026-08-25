@@ -6,6 +6,8 @@ describe("eventNameFromProp", () => {
     expect(eventNameFromProp("onClick")).toBe("click");
     expect(eventNameFromProp("onKeyDown")).toBe("keyDown");
     expect(eventNameFromProp("onScrollWheel")).toBe("scrollWheel");
+    expect(eventNameFromProp("onInput")).toBe("input");
+    expect(eventNameFromProp("onSelectionChange")).toBe("selectionChange");
   });
 
   it("rejects props that only look like listeners", () => {

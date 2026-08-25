@@ -49,6 +49,18 @@ export type Operation =
   | [typeof Op.Drop, number]
   | [typeof Op.Call, number, string, unknown];
 
+export interface PathPromptOptions {
+  files?: boolean;
+  directories?: boolean;
+  multiple?: boolean;
+  prompt?: string;
+}
+
+export type ClipboardEntry =
+  | { type: "text"; text: string }
+  | { type: "paths"; paths: string[] }
+  | { type: "image"; mime: string; data: string };
+
 /** Options accepted when opening the gpui window. */
 export interface WindowOptions {
   title?: string;

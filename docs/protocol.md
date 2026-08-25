@@ -83,7 +83,8 @@ Remaining properties are element-specific.
 | `img`, `svg` | `src`, `path` |
 | `uniform-list` | `count`, `start`, `scrollToItem` |
 | `list` | the same, plus `insertedAt`, `align`, `overdraw`, `itemHeight`, `follow` |
-| `input` | `value`, `placeholder`, `multiline`, `rows` |
+| `input` | `value`, `placeholder`, `multiline`, `rows`, `enterBehavior` (`newline` or `propagate`) |
+| `codeSurface` | `value`, UTF-16 `highlights` and selection offsets, `lineNumbers`, `scrollToLine` |
 | `canvas` | `commands` |
 | `scrollbar` | `orientation`, `thickness`, `thumbStyle`. It scrolls its own first element child |
 | `anchored` | `anchor`, `position`, `offset`, `snapToWindow` |
@@ -125,6 +126,13 @@ Three events are requests rather than notifications.
   end up asking for every row in between.
 - `input` reports an edit the host has already applied to its own buffer, which
   is why a `value` prop that echoes it does not fight the caret.
+
+Path pickers and clipboard reads use generic calls (`dialog.openFile` and
+`clipboard.read`). Path-picker responses are arrays of native filesystem path strings. Clipboard
+responses are arrays of text (`{type:"text",text}`), external paths
+(`{type:"paths",paths}`), or images (`{type:"image",mime,data}`), where image
+data is base64. Native path drops arrive as a `dropFiles` event with a `paths`
+array.
 
 ## Batching and lifetime
 

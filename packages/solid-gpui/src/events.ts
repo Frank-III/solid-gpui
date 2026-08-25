@@ -96,6 +96,14 @@ export interface InputEvent {
   /** Cursor and selection offsets, in UTF-16 code units. */
   selectionStart: number;
   selectionEnd: number;
+  /** Whether this edit is part of an active IME composition. */
+  composing: boolean;
+}
+
+/** A read-only text selection, expressed as UTF-16 code-unit offsets. */
+export interface SelectionChangeEvent {
+  selectionStart: number;
+  selectionEnd: number;
 }
 
 /** The rows a `<uniform-list>` needs rendered. */
@@ -113,6 +121,11 @@ export interface ResizeEvent {
 /** Which of an element's declared key bindings fired. */
 export interface KeysEvent {
   index: number;
+}
+
+/** Files or directories dropped into the native window. */
+export interface DropFilesEvent {
+  paths: string[];
 }
 
 /** Fired when the pointer enters or leaves an element. */
@@ -142,6 +155,8 @@ export interface EventMap {
   resize: ResizeEvent;
   keys: KeysEvent;
   select: null;
+  selectionChange: SelectionChangeEvent;
+  dropFiles: DropFilesEvent;
 }
 
 export type EventName = keyof EventMap;
@@ -170,6 +185,8 @@ const EVENT_NAMES = new Set<string>([
   "resize",
   "keys",
   "select",
+  "selectionChange",
+  "dropFiles",
 ]);
 
 /**

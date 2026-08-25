@@ -6,7 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
-use gpui::{App, AppContext, PathPromptOptions, PromptLevel, WindowHandle};
+use base64::Engine as _;
+use gpui::{App, AppContext, ClipboardEntry, PathPromptOptions, PromptLevel, WindowHandle};
 use serde_json::{Value, json};
 
 use crate::Root;
@@ -131,6 +132,36 @@ pub fn run(
                 }
             })
             .detach();
+        }
+
+        "clipboard.read" => {
+            let entries = cx
+                .read_from_clipboard()
+                .map(|item| {
+                    item.into_entries()
+                        .map(|entry| match entry {
+                            ClipboardEntry::String(value) => {
+                                json!({ "type": "text", "text": value.text })
+                            }
+                            ClipboardEntry::ExternalPaths(paths) => json!({
+                                "type": "paths",
+                                "paths": paths
+                                    .paths()
+                                    .iter()
+                                    .map(|path| path.to_string_lossy())
+                                    .collect::<Vec<_>>(),
+                            }),
+                            ClipboardEntry::Image(image) => json!({
+                                "type": "image",
+                                "mime": image.format.mime_type(),
+                                "data": base64::engine::general_purpose::STANDARD
+                                    .encode(image.bytes),
+                            }),
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            crate::emit_answer(request, json!(entries));
         }
 
         "shell.revealPath" | "shell.openWithSystem" => {

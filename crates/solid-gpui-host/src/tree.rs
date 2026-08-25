@@ -16,6 +16,7 @@ use gpui::{
 };
 use serde_json::Value;
 
+use crate::code_surface::NativeCodeSurface;
 use crate::input::InputState;
 use crate::protocol::{NodeId, Op};
 use crate::style::{WireAnimation, WireStyle};
@@ -71,6 +72,9 @@ pub struct Node {
     /// arrived can be re-measured.
     pub last_window: Cell<Option<(usize, usize)>>,
     pub input: Option<Entity<InputState>>,
+    /// A read-only shaped source surface keeps selection and scroll state
+    /// natively while Solid remains the canonical owner of its document.
+    pub code_surface: Option<Entity<NativeCodeSurface>>,
     /// The last row range a virtualised list asked JavaScript for, so the same
     /// request is not sent again on every frame.
     pub last_range: Cell<Option<(usize, usize)>>,
@@ -120,6 +124,7 @@ impl Node {
             list_count: Cell::new(0),
             last_window: Cell::new(None),
             input: None,
+            code_surface: None,
             last_range: Cell::new(None),
             focused_once: Cell::new(false),
             last_scroll: Cell::new(None),
@@ -136,15 +141,28 @@ impl Node {
     }
 
     pub fn prop_f32(&self, key: &str) -> Option<f32> {
-        self.props.get(key).and_then(Value::as_f64).map(|v| v as f32)
+        self.props
+            .get(key)
+            .and_then(Value::as_f64)
+            .map(|v| v as f32)
     }
 
     pub fn prop_usize(&self, key: &str) -> Option<usize> {
-        self.props.get(key).and_then(Value::as_u64).map(|v| v as usize)
+        self.props
+            .get(key)
+            .and_then(Value::as_u64)
+            .map(|v| v as usize)
     }
 
     pub fn prop_bool(&self, key: &str) -> bool {
-        self.props.get(key).and_then(Value::as_bool).unwrap_or(false)
+        self.props
+            .get(key)
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    pub fn prop_value(&self, key: &str) -> Option<&Value> {
+        self.props.get(key)
     }
 
     /// The node id an element-valued prop points at.
@@ -180,7 +198,10 @@ impl Node {
             return;
         }
         if next > previous {
-            let at = self.prop_usize("insertedAt").unwrap_or(previous).min(previous);
+            let at = self
+                .prop_usize("insertedAt")
+                .unwrap_or(previous)
+                .min(previous);
             state.splice(at..at, next - previous);
         } else {
             state.reset(next);
@@ -268,6 +289,43 @@ impl Tree {
         }
     }
 
+    fn sync_input_selection(&self, id: NodeId, cx: &mut App) {
+        let Some(node) = self.nodes.get(&id) else {
+            return;
+        };
+        let Some(input) = node.input.clone() else {
+            return;
+        };
+        let start = node.prop_usize("selectionStart").unwrap_or(0);
+        let end = node.prop_usize("selectionEnd").unwrap_or(start);
+        input.update(cx, |input, cx| {
+            input.set_selection(start, end);
+            cx.notify();
+        });
+    }
+
+    fn sync_code_surface(&self, id: NodeId, cx: &mut App) {
+        let Some(node) = self.nodes.get(&id) else {
+            return;
+        };
+        let Some(surface) = node.code_surface.clone() else {
+            return;
+        };
+        let selection = node
+            .prop_usize("selectionStart")
+            .map(|start| (start, node.prop_usize("selectionEnd").unwrap_or(start)));
+        surface.update(cx, |surface, cx| {
+            surface.sync(
+                node.prop_str("value").unwrap_or_default(),
+                selection,
+                node.prop_value("highlights").unwrap_or(&Value::Null),
+                node.prop_bool("lineNumbers"),
+                node.prop_usize("scrollToLine"),
+            );
+            cx.notify();
+        });
+    }
+
     fn set_prop(&mut self, id: NodeId, key: &str, value: Value, cx: &mut App) {
         // Listener props are encoded as `@name`; the host only needs to know
         // whether a listener exists, since the closure itself lives in JS.
@@ -295,7 +353,7 @@ impl Tree {
         // Anything that needs application state has to reach for it before the
         // node is mutably borrowed.
         match key {
-            "focusable" | "tabIndex" | "autofocus" => self.ensure_focus(id, cx),
+            "focusable" | "tabIndex" | "autofocus" | "focused" => self.ensure_focus(id, cx),
             "scrollTop" | "scrollLeft" => {
                 if let Some(node) = self.nodes.get_mut(&id)
                     && node.scroll.is_none()
@@ -347,7 +405,9 @@ impl Tree {
                 None
             } else {
                 serde_json::from_value::<WireAnimation>(value.clone())
-                    .map_err(|error| crate::emit_log(format!("ignoring unparsable animation: {error}")))
+                    .map_err(|error| {
+                        crate::emit_log(format!("ignoring unparsable animation: {error}"))
+                    })
                     .ok()
             }
         });
@@ -373,15 +433,17 @@ impl Tree {
             });
         }
         let input = self.nodes.get(&id).and_then(|node| node.input.clone());
-        if (key == "multiline" || key == "rows")
+        if matches!(key, "multiline" | "rows" | "enterBehavior")
             && let Some(input) = input
         {
             let multiline = key == "multiline" && value.as_bool().unwrap_or(false);
             let rows = value.as_u64().unwrap_or(0) as usize;
+            let newline_on_enter = value.as_str() != Some("propagate");
             input.update(cx, |state, cx| {
                 match key {
                     "multiline" => state.multiline = multiline,
-                    _ => state.rows = rows.max(1),
+                    "rows" => state.rows = rows.max(1),
+                    _ => state.newline_on_enter = newline_on_enter,
                 }
                 cx.notify();
             });
@@ -426,6 +488,20 @@ impl Tree {
                 }
             }
         }
+        if matches!(key, "selectionStart" | "selectionEnd") {
+            self.sync_input_selection(id, cx);
+        }
+        if matches!(
+            key,
+            "value"
+                | "selectionStart"
+                | "selectionEnd"
+                | "highlights"
+                | "lineNumbers"
+                | "scrollToLine"
+        ) {
+            self.sync_code_surface(id, cx);
+        }
     }
 
     fn detach(&mut self, parent: NodeId, child: NodeId) {
@@ -445,14 +521,13 @@ impl Tree {
         match op {
             Op::CreateElement { id, tag, props } => {
                 let is_input = tag == "input";
+                let is_code_surface = tag == "codeSurface";
                 let tag_is_uniform_list = tag == "uniform-list";
                 self.nodes.insert(
                     id,
                     Node::new(id, NodeKind::Element, tag, SharedString::default()),
                 );
-                if tag_is_uniform_list
-                    && let Some(node) = self.nodes.get_mut(&id)
-                {
+                if tag_is_uniform_list && let Some(node) = self.nodes.get_mut(&id) {
                     // Same reason as above: a scrollbar has to find a handle
                     // already there.
                     node.list_scroll = Some(UniformListScrollHandle::new());
@@ -468,6 +543,18 @@ impl Tree {
                     let state = cx.new(|_| InputState::new(id, focus));
                     if let Some(node) = self.nodes.get_mut(&id) {
                         node.input = Some(state);
+                    }
+                }
+                if is_code_surface {
+                    self.ensure_focus(id, cx);
+                    let focus = self
+                        .nodes
+                        .get(&id)
+                        .and_then(|node| node.focus.clone())
+                        .expect("focus handle was just created");
+                    let surface = cx.new(|_| NativeCodeSurface::new(id, focus));
+                    if let Some(node) = self.nodes.get_mut(&id) {
+                        node.code_surface = Some(surface);
                     }
                 }
                 for (key, value) in props {

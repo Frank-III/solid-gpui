@@ -10,12 +10,12 @@ use std::time::Duration;
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AppContext, ClickEvent, Context, CursorStyle, Display,
-    Div, FollowMode, HighlightStyle, InteractiveElement, InteractiveText, IntoElement, KeyDownEvent,
-    ListAlignment, ListState, MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent,
-    MousePressureEvent, MouseUpEvent, ParentElement, PinchEvent, Point, Render, ScrollDelta,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Stateful, Styled, StyleRefinement,
-    StyledText, Window, anchored, deferred, div, hsla, image_cache, img, list, px, retain_all,
-    svg, uniform_list,
+    Div, FollowMode, HighlightStyle, InteractiveElement, InteractiveText, IntoElement,
+    KeyDownEvent, ListAlignment, ListState, MouseButton, MouseDownEvent, MouseExitEvent,
+    MouseMoveEvent, MousePressureEvent, MouseUpEvent, ParentElement, PinchEvent, Point, Render,
+    ScrollDelta, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement,
+    StyleRefinement, Styled, StyledText, Window, anchored, deferred, div, hsla, image_cache, img,
+    list, px, retain_all, svg, uniform_list,
 };
 use serde_json::{Value, json};
 
@@ -387,7 +387,11 @@ where
     if node.is_focusable() {
         if node.listens_to("keyDown") {
             element = element.on_key_down(move |event: &KeyDownEvent, _window, _cx| {
-                crate::emit_event(id, "keyDown", keystroke_json(&event.keystroke, event.is_held));
+                crate::emit_event(
+                    id,
+                    "keyDown",
+                    keystroke_json(&event.keystroke, event.is_held),
+                );
             });
         }
         if node.listens_to("keyUp") {
@@ -462,7 +466,9 @@ pub fn build(tree: &Shared, id: NodeId) -> AnyElement {
             let path = node.prop_str("path").unwrap_or_default().to_owned();
             finish(
                 decorate(
-                    svg().path(SharedString::from(path)).id(node.element_id.clone()),
+                    svg()
+                        .path(SharedString::from(path))
+                        .id(node.element_id.clone()),
                     node,
                     tree,
                 ),
@@ -470,6 +476,7 @@ pub fn build(tree: &Shared, id: NodeId) -> AnyElement {
             )
         }
         "input" => build_input(node, tree),
+        "codeSurface" => build_code_surface(node, tree),
         "uniform-list" => build_uniform_list(node, tree),
         "list" => build_list(node, tree),
         "image-cache" => build_image_cache(node, tree),
@@ -632,7 +639,10 @@ fn build_image_cache(node: &Node, tree: &Shared) -> AnyElement {
     if element.style().display.is_none() {
         element.style().display = Some(Display::Flex);
     }
-    finish(append_children(measure(element, node, tree), node, tree), node)
+    finish(
+        append_children(measure(element, node, tree), node, tree),
+        node,
+    )
 }
 
 fn build_input(node: &Node, tree: &Shared) -> AnyElement {
@@ -693,6 +703,17 @@ fn build_input(node: &Node, tree: &Shared) -> AnyElement {
     });
 
     finish(element.child(TextElement { input: state }), node)
+}
+
+fn build_code_surface(node: &Node, tree: &Shared) -> AnyElement {
+    let mut element = decorate(div().id(node.element_id.clone()), node, tree);
+    if element.style().display.is_none() {
+        element.style().display = Some(Display::Flex);
+    }
+    if let Some(surface) = node.code_surface.clone() {
+        element = element.child(surface);
+    }
+    finish(element, node)
 }
 
 /// The row gpui renders to measure the height of every other row. It is
@@ -964,11 +985,11 @@ fn build_canvas(node: &Node, tree: &Shared) -> AnyElement {
 /// wrapping `<div>` would have stood, and takes the style that div would have.
 fn build_scrollbar(node: &Node, tree: &Shared) -> AnyElement {
     let borrowed = tree.borrow();
-    let target = node
-        .children
-        .iter()
-        .copied()
-        .find(|child| borrowed.get(*child).is_some_and(|child| child.kind == NodeKind::Element));
+    let target = node.children.iter().copied().find(|child| {
+        borrowed
+            .get(*child)
+            .is_some_and(|child| child.kind == NodeKind::Element)
+    });
     drop(borrowed);
     let Some(target) = target else {
         return finish(container(node, tree), node);

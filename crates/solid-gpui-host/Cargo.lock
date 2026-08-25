@@ -5102,6 +5102,7 @@ name = "solid-gpui-host"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "base64",
  "env_logger",
  "gpui",
  "gpui_platform",
