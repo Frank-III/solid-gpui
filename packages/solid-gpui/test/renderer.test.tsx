@@ -31,6 +31,8 @@ async function mount(code: () => unknown) {
     title: "test",
     width: 100,
     height: 100,
+    titlebarTransparent: true,
+    trafficLightPosition: { x: 12, y: 11 },
   });
   return host;
 }
@@ -38,7 +40,13 @@ async function mount(code: () => unknown) {
 describe("mounting", () => {
   it("opens the window before anything else", async () => {
     const host = await mount(() => <div />);
-    expect(host.batches[0]).toEqual([[Op.OpenWindow, { title: "test", width: 100, height: 100 }]]);
+    expect(host.batches[0]).toEqual([[Op.OpenWindow, {
+      title: "test",
+      width: 100,
+      height: 100,
+      titlebarTransparent: true,
+      trafficLightPosition: { x: 12, y: 11 },
+    }]]);
   });
 
   it("gives the window root a definite size", async () => {

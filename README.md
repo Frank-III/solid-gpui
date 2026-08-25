@@ -88,9 +88,10 @@ A project of your own needs the JSX transform and two TypeScript options.
 [docs/setup.md](docs/setup.md) covers those, how the host binary is found, and
 how to develop without a Rust toolchain at all.
 
-The desktop application uses `@opencode-ai/sdk/v2`. By default it starts
-`opencode serve` on `127.0.0.1:4096`, so the `opencode` CLI must be installed and
-available on `PATH`. It can connect to an existing local or remote server instead:
+The desktop application uses `@opencode-ai/sdk/v2`. By default it reuses a
+healthy OpenCode server on `127.0.0.1:4096`, or starts `opencode serve` on an
+available local port, so the `opencode` CLI must be installed and available on
+`PATH`. It can connect to an existing local or remote server instead:
 
 ```sh
 OPENCODE_URL=http://127.0.0.1:4096 \

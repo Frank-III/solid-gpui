@@ -68,10 +68,18 @@ pub struct WindowConfig {
     pub x: Option<f32>,
     pub y: Option<f32>,
     pub titlebar: Option<bool>,
+    pub titlebar_transparent: Option<bool>,
+    pub traffic_light_position: Option<WirePoint>,
     pub fullscreen: Option<bool>,
     pub resizable: Option<bool>,
     pub appearance: Option<String>,
     pub activate: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct WirePoint {
+    pub x: f32,
+    pub y: f32,
 }
 
 fn as_id(value: Option<&Value>, what: &str) -> Result<NodeId, String> {

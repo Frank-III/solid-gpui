@@ -23,8 +23,8 @@ Self-contained Node/GPUI bundles for macOS and Linux are assembled by
 `scripts/package-desktop.mjs`. They include Node and the native host; only the
 OpenCode CLI remains an external requirement. See [DISTRIBUTION.md](DISTRIBUTION.md).
 
-By default the app reuses OpenCode on `127.0.0.1:4096`, or starts
-`opencode serve` there when no server is running. To connect explicitly:
+By default the app reuses a healthy OpenCode server on `127.0.0.1:4096`, or
+starts `opencode serve` on an available local port. To connect explicitly:
 
 ```sh
 OPENCODE_URL=http://127.0.0.1:4096 \

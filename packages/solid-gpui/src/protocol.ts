@@ -70,6 +70,10 @@ export interface WindowOptions {
   y?: number;
   /** Hides the platform title bar and lets the tree paint its own. */
   titlebar?: boolean;
+  /** Lets application content paint behind the native titlebar controls. */
+  titlebarTransparent?: boolean;
+  /** Top-left origin of the macOS close button in logical pixels. */
+  trafficLightPosition?: { x: number; y: number };
   /** Starts the window full screen. */
   fullscreen?: boolean;
   /** Allows the user to resize the window. Defaults to `true`. */

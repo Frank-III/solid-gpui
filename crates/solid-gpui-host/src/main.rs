@@ -243,8 +243,10 @@ fn window_options(config: &WindowConfig, cx: &mut App) -> WindowOptions {
                 .clone()
                 .map(Into::into)
                 .or_else(|| Some("solid-gpui".into())),
-            appears_transparent: false,
-            traffic_light_position: None,
+            appears_transparent: config.titlebar_transparent.unwrap_or(false),
+            traffic_light_position: config
+                .traffic_light_position
+                .map(|position| point(px(position.x), px(position.y))),
         })
     };
 

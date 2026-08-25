@@ -31,17 +31,20 @@ export class DesktopRuntime {
       : !this.config.spawn
         ? Effect.succeed(fallback)
         : Effect.tryPromise({
-            try: () => fetch(new URL("/global/health", fallback), {
-              headers: this.config.password
-                ? { Authorization: `Basic ${Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64")}` }
-                : undefined,
-            }),
+            try: async () => {
+              const response = await fetch(new URL("/global/health", fallback), {
+                headers: this.config.password
+                  ? { Authorization: `Basic ${Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64")}` }
+                  : undefined,
+              });
+              if (!response.ok) throw new Error(`OpenCode health check returned HTTP ${response.status}`);
+            },
             catch: error,
           }).pipe(
             Effect.as(fallback),
             Effect.catch(() => Effect.acquireRelease(
               Effect.tryPromise({
-                try: () => createOpencodeServer({ hostname: "127.0.0.1", port: 4096, timeout: 15_000 }),
+                try: () => createOpencodeServer({ hostname: "127.0.0.1", port: 0, timeout: 15_000 }),
                 catch: error,
               }),
               (server) => Effect.sync(() => server.close()),

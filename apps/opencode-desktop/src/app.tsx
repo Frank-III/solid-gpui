@@ -435,6 +435,8 @@ await render(() => <App />, {
   width: 1220,
   height: 840,
   appearance: "transparent",
+  titlebarTransparent: true,
+  trafficLightPosition: { x: 12, y: 11 },
   hostPath: process.env["SOLID_GPUI_HOST"] ?? fileURLToPath(new URL("../../../crates/solid-gpui-host/target/release/solid-gpui-host", import.meta.url)),
   onClose: () => controller.stop(),
 });

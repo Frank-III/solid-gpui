@@ -103,6 +103,8 @@ export async function render(
     x,
     y,
     titlebar,
+    titlebarTransparent,
+    trafficLightPosition,
     fullscreen,
     resizable,
     appearance,
@@ -119,6 +121,8 @@ export async function render(
   if (x !== undefined) window.x = x;
   if (y !== undefined) window.y = y;
   if (titlebar !== undefined) window.titlebar = titlebar;
+  if (titlebarTransparent !== undefined) window.titlebarTransparent = titlebarTransparent;
+  if (trafficLightPosition !== undefined) window.trafficLightPosition = trafficLightPosition;
   if (fullscreen !== undefined) window.fullscreen = fullscreen;
   if (resizable !== undefined) window.resizable = resizable;
   if (appearance !== undefined) window.appearance = appearance;

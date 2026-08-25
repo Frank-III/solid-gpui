@@ -26,7 +26,7 @@ export function AppChrome(props: {
   reopenSession: () => void;
 }) {
   return (
-    <div style={{ height: 36, flexShrink: 0, alignItems: "center", paddingX: 8, gap: 4, background: color.chrome }}>
+    <div style={{ height: 36, flexShrink: 0, alignItems: "center", paddingLeft: process.platform === "darwin" ? 84 : 8, paddingRight: 8, gap: 4, background: color.chrome }}>
       <IconButton label={props.sidebarOpen ? "◧" : "◫"} tooltip={props.sidebarOpen ? "Hide project navigation" : "Show project navigation"} onClick={props.toggleSidebar} />
       <div tooltip={props.state.directory} style={{ maxWidth: 150, alignItems: "center", gap: 7, paddingX: 7, color: color.secondary }}>
         <div style={{ width: 18, height: 18, alignItems: "center", justifyContent: "center", borderRadius: 4, background: color.text, color: color.deep, fontSize: 9, fontWeight: "bold" }}>
